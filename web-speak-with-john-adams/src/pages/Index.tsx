@@ -8,9 +8,14 @@ import { StageHeader } from "@/components/StageHeader";
 import { VoiceOrb } from "@/components/VoiceOrb";
 import { useAdamsConversation } from "@/hooks/useAdamsConversation";
 import { useVoiceInput } from "@/hooks/useVoiceInput";
+import { useAdamsSettings } from "@/lib/settings";
+import { resumePendingMotionRenders } from "@/lib/viggle";
 
 const Index = () => {
   const [lastQuestion, setLastQuestion] = useState<string>("");
+  const settings = useAdamsSettings();
+  /** Which clip of the wandering repertoire is upon the stage just now. */
+  const [motionIndex, setMotionIndex] = useState<number>(0);
   /** Set once `voice` exists below; keeps the mic hook's callback stable. */
   const askRef = useRef<(question: string) => void>(() => undefined);
   const voiceRef = useRef<ReturnType<typeof useVoiceInput> | null>(null);
@@ -41,6 +46,30 @@ const Index = () => {
   });
 
   const busy = phase === "considering";
+
+  const readyMotionClips = settings.motionClips.filter(
+    (clip) => clip.status === "ready" && clip.videoUrl.length > 0,
+  );
+
+  // Let him wander: every so often he trades one motion for another.
+  useEffect(() => {
+    if (!settings.motionShuffle || readyMotionClips.length <= 1) return;
+    const timer = window.setInterval(() => setMotionIndex((index) => index + 1), 45000);
+    return () => window.clearInterval(timer);
+  }, [settings.motionShuffle, readyMotionClips.length]);
+
+  const activeMotionUrl =
+    readyMotionClips.length === 0
+      ? null
+      : settings.motionShuffle
+        ? readyMotionClips[motionIndex % readyMotionClips.length].videoUrl
+        : (readyMotionClips.find((clip) => clip.id === settings.activeMotionClipId) ?? readyMotionClips[0])
+            .videoUrl;
+
+  // Any motion renders this device left unfinished are taken up again.
+  useEffect(() => {
+    resumePendingMotionRenders();
+  }, []);
 
   const handleAsk = useCallback((question: string): void => {
     askRef.current(question);
@@ -100,7 +129,12 @@ const Index = () => {
 
   return (
     <main className="relative flex h-[100dvh] w-full flex-col overflow-hidden bg-stage">
-      <AdamsStage phase={phase} mouthLevelRef={mouthLevelRef} didStream={didStream} />
+      <AdamsStage
+        phase={phase}
+        mouthLevelRef={mouthLevelRef}
+        didStream={didStream}
+        motionClipUrl={activeMotionUrl}
+      />
 
       <StageHeader phase={phase} />
 

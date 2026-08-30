@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { KeyRound, Loader2, Play, Volume2 } from "lucide-react";
+import { Film, KeyRound, Loader2, Play, Shuffle, Trash2, Volume2, Wand2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -24,6 +24,16 @@ import {
   useAdamsSettings,
   type VoiceProvider,
 } from "@/lib/settings";
+import {
+  fetchMotionOptions,
+  isViggleEnabled,
+  removeMotionClip,
+  setActiveMotionClip,
+  setMotionShuffle,
+  startMotionRender,
+  ViggleError,
+  type MotionOption,
+} from "@/lib/viggle";
 import { cn } from "@/lib/utils";
 
 interface SettingsDialogProps {
@@ -56,6 +66,14 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const previewAudioRef = useRef<HTMLAudioElement | null>(null);
   const previewUrlRef = useRef<string | null>(null);
 
+  // The Motion Atelier: full-body clips rendered by Viggle from his portrait.
+  const [motionOptions, setMotionOptions] = useState<MotionOption[]>([]);
+  const [motionLoading, setMotionLoading] = useState<boolean>(false);
+  const [motionBusy, setMotionBusy] = useState<string | null>(null);
+  const [motionNote, setMotionNote] = useState<string | null>(null);
+  const [customMotionUrl, setCustomMotionUrl] = useState<string>("");
+  const [customMotionName, setCustomMotionName] = useState<string>("");
+
   const hasOpenaiKey = settings.openaiKey.length > 0;
   const hasElevenlabsKey = settings.elevenlabsKey.length > 0;
 
@@ -78,6 +96,31 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
       });
     return () => controller.abort();
   }, [open, hasElevenlabsKey, settings.elevenlabsKey]);
+
+  // The repertoire, fetched whenever the atelier is opened.
+  useEffect(() => {
+    if (!open || !isViggleEnabled()) return;
+    let cancelled = false;
+    setMotionLoading(true);
+    setMotionNote(null);
+    fetchMotionOptions()
+      .then((options) => {
+        if (!cancelled) setMotionOptions(options);
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) {
+          setMotionNote(
+            error instanceof ViggleError ? error.message : "The motion repertoire could not be fetched.",
+          );
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setMotionLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
 
   // A closed office silences any audition still playing.
   useEffect(() => {
@@ -110,6 +153,46 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
 
   const handleChooseVoice = (voiceId: string): void => {
     updateSettings({ elevenlabsVoiceId: voiceId });
+  };
+
+  const handleAnimate = (option: MotionOption): void => {
+    if (motionBusy !== null) return;
+    setMotionBusy(option.id);
+    setMotionNote(null);
+    startMotionRender(option)
+      .then(() => {
+        setMotionNote(`He is learning “${option.name}” — the clip returns in a few minutes.`);
+      })
+      .catch((error: unknown) => {
+        setMotionNote(error instanceof ViggleError ? error.message : "The motion studio refused the request.");
+      })
+      .finally(() => setMotionBusy(null));
+  };
+
+  const handleCustomMotion = (): void => {
+    if (motionBusy !== null) return;
+    const url = customMotionUrl.trim();
+    if (!/^https?:\/\//.test(url)) {
+      setMotionNote("That address does not look like a video the studio can fetch.");
+      return;
+    }
+    const option: MotionOption = {
+      id: "",
+      name: customMotionName.trim().length > 0 ? customMotionName.trim() : "A gesture of his own",
+      kind: "mine",
+    };
+    setMotionBusy("custom");
+    setMotionNote(null);
+    startMotionRender(option, url)
+      .then(() => {
+        setMotionNote(`He is learning “${option.name}” — the clip returns in a few minutes.`);
+        setCustomMotionUrl("");
+        setCustomMotionName("");
+      })
+      .catch((error: unknown) => {
+        setMotionNote(error instanceof ViggleError ? error.message : "The motion studio refused the request.");
+      })
+      .finally(() => setMotionBusy(null));
   };
 
   const handlePreview = (): void => {
@@ -269,6 +352,169 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                 );
               })}
             </div>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <Label className="flex items-center gap-2 font-sans text-xs font-semibold uppercase tracking-widest text-[hsl(26_25%_32%)]">
+              <Film className="h-3.5 w-3.5" aria-hidden="true" />
+              The Motion Atelier — his body
+            </Label>
+
+            {!isViggleEnabled() ? (
+              <p className="font-serif-voice text-[0.85rem] italic text-[hsl(26_22%_38%)]">
+                The motion studio awaits its Viggle key. With one, he learns to pace, sit, and gesture within his own
+                picture.
+              </p>
+            ) : (
+              <>
+                <p className="font-serif-voice text-[0.85rem] italic text-[hsl(26_22%_38%)]">
+                  Choose a motion and he rehearses it in his own portrait — a few minutes in the making, one Viggle
+                  credit for each second he moves.
+                </p>
+
+                {motionLoading ? (
+                  <p className="flex items-center gap-2 font-serif-voice text-[0.85rem] italic text-[hsl(26_22%_38%)]">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> Fetching the repertoire…
+                  </p>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {motionOptions.map((option) => (
+                      <Button
+                        key={option.id}
+                        type="button"
+                        variant="outline"
+                        disabled={motionBusy !== null}
+                        onClick={() => handleAnimate(option)}
+                        className="min-h-[40px] border-[hsl(40_35%_65%)] bg-[hsl(41_40%_84%/0.6)] px-3 text-[0.85rem] text-ink hover:bg-[hsl(41_40%_78%)]"
+                      >
+                        {motionBusy === option.id ? (
+                          <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                        ) : (
+                          <Wand2 className="mr-1 h-3.5 w-3.5" aria-hidden="true" />
+                        )}
+                        {option.name}
+                      </Button>
+                    ))}
+                    {motionOptions.length === 0 ? (
+                      <p className="font-serif-voice text-[0.85rem] italic text-[hsl(26_22%_38%)]">
+                        The repertoire is empty for now — lend him a motion below.
+                      </p>
+                    ) : null}
+                  </div>
+                )}
+
+                <div className="flex flex-col gap-1.5">
+                  <Label
+                    htmlFor="motion-url"
+                    className="font-sans text-[0.72rem] uppercase tracking-widest text-[hsl(26_25%_32%)]"
+                  >
+                    Or lend a motion — a public video URL
+                  </Label>
+                  <Input
+                    id="motion-url"
+                    type="url"
+                    autoComplete="off"
+                    spellCheck={false}
+                    placeholder="https://… a film of the movement itself"
+                    value={customMotionUrl}
+                    onChange={(event) => setCustomMotionUrl(event.target.value)}
+                    className="text-[0.85rem]"
+                  />
+                  <Input
+                    type="text"
+                    autoComplete="off"
+                    placeholder="What shall he do? (e.g. Paces the floor)"
+                    value={customMotionName}
+                    onChange={(event) => setCustomMotionName(event.target.value)}
+                    className="text-[0.85rem]"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={motionBusy !== null || customMotionUrl.trim().length === 0}
+                    onClick={handleCustomMotion}
+                    className="min-h-[44px] border-[hsl(40_35%_65%)] bg-[hsl(41_40%_84%/0.6)] text-ink hover:bg-[hsl(41_40%_78%)]"
+                  >
+                    {motionBusy === "custom" ? (
+                      <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                    ) : (
+                      <Wand2 className="mr-1 h-3.5 w-3.5" aria-hidden="true" />
+                    )}
+                    Set him in motion
+                  </Button>
+                </div>
+
+                {settings.motionClips.length > 0 ? (
+                  <div className="flex flex-col gap-2">
+                    {settings.motionClips.map((clip) => (
+                      <div
+                        key={clip.id}
+                        className="flex items-center justify-between gap-2 rounded-[5px] border border-[hsl(40_35%_65%)] bg-[hsl(41_40%_84%/0.6)] px-3 py-2"
+                      >
+                        <div className="min-w-0">
+                          <span className="block truncate font-display text-[0.9rem] text-ink">{clip.name}</span>
+                          <span className="block font-sans text-[0.7rem] text-[hsl(26_20%_38%)]">
+                            {clip.status === "rendering"
+                              ? "In the studio — a few minutes…"
+                              : clip.status === "ready"
+                                ? "Ready"
+                                : "The studio could not finish it"}
+                          </span>
+                        </div>
+                        <div className="flex shrink-0 items-center gap-1">
+                          {clip.status === "ready" ? (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setActiveMotionClip(clip.id)}
+                              className={cn(
+                                "min-h-[36px] px-2 text-[0.75rem]",
+                                settings.activeMotionClipId === clip.id
+                                  ? "border-[hsl(11_55%_35%)] bg-[hsl(11_45%_30%/0.12)] text-ink"
+                                  : "border-[hsl(40_35%_65%)] bg-[hsl(41_40%_84%/0.6)] text-ink hover:bg-[hsl(41_40%_78%)]",
+                              )}
+                            >
+                              {settings.activeMotionClipId === clip.id ? "On stage" : "Stage it"}
+                            </Button>
+                          ) : null}
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => removeMotionClip(clip.id)}
+                            aria-label={`Discard ${clip.name}`}
+                            className="min-h-[36px] px-2 text-[hsl(26_20%_38%)] hover:bg-[hsl(41_40%_78%)]"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+
+                    <button
+                      type="button"
+                      onClick={() => setMotionShuffle(!settings.motionShuffle)}
+                      className={cn(
+                        "flex min-h-[40px] items-center gap-2 rounded-[5px] border px-3 text-left font-sans text-[0.8rem] transition-colors",
+                        settings.motionShuffle
+                          ? "border-[hsl(11_55%_35%)] bg-[hsl(11_45%_30%/0.12)] text-ink"
+                          : "border-[hsl(40_35%_65%)] bg-[hsl(41_40%_84%/0.6)] text-[hsl(26_20%_38%)] hover:bg-[hsl(41_40%_78%)]",
+                      )}
+                    >
+                      <Shuffle className="h-3.5 w-3.5" aria-hidden="true" />
+                      {settings.motionShuffle
+                        ? "He wanders between his motions as he listens"
+                        : "He keeps to the chosen motion"}
+                    </button>
+                  </div>
+                ) : null}
+
+                {motionNote !== null ? (
+                  <p className="font-serif-voice text-[0.82rem] italic text-[hsl(11_50%_32%)]">{motionNote}</p>
+                ) : null}
+              </>
+            )}
           </div>
 
           <div className="flex items-center justify-between gap-3">

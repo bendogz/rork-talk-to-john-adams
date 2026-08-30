@@ -10,12 +10,29 @@ import { useSyncExternalStore } from "react";
 
 export type VoiceProvider = "elevenlabs" | "openai";
 
+/** One full-body motion of Adams, rendered by Viggle from his portrait. */
+export interface MotionClip {
+  /** The Viggle render id (render_…) — also how an unfinished render is found again. */
+  id: string;
+  name: string;
+  status: "rendering" | "ready" | "failed";
+  videoUrl: string;
+  createdAt: number;
+}
+
 export interface AdamsSettings {
   openaiKey: string;
   elevenlabsKey: string;
   /** Chosen from the account's own voices; empty falls back to his default. */
   elevenlabsVoiceId: string;
   ttsProvider: VoiceProvider;
+  /** Viggle character forged once from the portrait, so motions reuse it. */
+  viggleCharacterId: string;
+  motionClips: MotionClip[];
+  /** The clip upon the stage; empty lets the first ready one stand. */
+  activeMotionClipId: string;
+  /** Let him wander: cycle through every ready clip while he listens. */
+  motionShuffle: boolean;
 }
 
 const STORAGE_KEY = "speak-with-adams.settings.v1";
@@ -32,6 +49,10 @@ const EMPTY_SETTINGS: AdamsSettings = {
   elevenlabsKey: "",
   elevenlabsVoiceId: "",
   ttsProvider: "elevenlabs",
+  viggleCharacterId: "",
+  motionClips: [],
+  activeMotionClipId: "",
+  motionShuffle: false,
 };
 
 /** What this device itself has entrusted — without the built-in keys. */
@@ -46,11 +67,30 @@ function read(): AdamsSettings {
     const stored = window.localStorage.getItem(STORAGE_KEY);
     if (!stored) return { ...EMPTY_SETTINGS };
     const parsed = JSON.parse(stored) as Partial<AdamsSettings>;
+    const storedClips: unknown = (parsed as { motionClips?: unknown }).motionClips;
+    const motionClips: MotionClip[] = Array.isArray(storedClips)
+      ? storedClips
+          .filter(
+            (entry): entry is Record<string, unknown> =>
+              typeof entry === "object" && entry !== null && typeof (entry as MotionClip).id === "string",
+          )
+          .map((entry) => ({
+            id: entry.id as string,
+            name: typeof entry.name === "string" ? entry.name : "A motion",
+            status: entry.status === "ready" || entry.status === "failed" ? entry.status : "rendering",
+            videoUrl: typeof entry.videoUrl === "string" ? entry.videoUrl : "",
+            createdAt: typeof entry.createdAt === "number" ? entry.createdAt : 0,
+          }))
+      : [];
     return {
       openaiKey: typeof parsed.openaiKey === "string" ? parsed.openaiKey : "",
       elevenlabsKey: typeof parsed.elevenlabsKey === "string" ? parsed.elevenlabsKey : "",
       elevenlabsVoiceId: typeof parsed.elevenlabsVoiceId === "string" ? parsed.elevenlabsVoiceId : "",
       ttsProvider: parsed.ttsProvider === "openai" ? "openai" : "elevenlabs",
+      viggleCharacterId: typeof parsed.viggleCharacterId === "string" ? parsed.viggleCharacterId : "",
+      motionClips,
+      activeMotionClipId: typeof parsed.activeMotionClipId === "string" ? parsed.activeMotionClipId : "",
+      motionShuffle: parsed.motionShuffle === true,
     };
   } catch (error) {
     console.warn("[adams] settings could not be read; using defaults", error);
@@ -83,6 +123,10 @@ export function saveSettings(next: AdamsSettings): void {
     elevenlabsKey: next.elevenlabsKey.trim(),
     elevenlabsVoiceId: next.elevenlabsVoiceId.trim(),
     ttsProvider: next.ttsProvider,
+    viggleCharacterId: next.viggleCharacterId.trim(),
+    motionClips: next.motionClips,
+    activeMotionClipId: next.activeMotionClipId.trim(),
+    motionShuffle: next.motionShuffle,
   };
   persist();
 }

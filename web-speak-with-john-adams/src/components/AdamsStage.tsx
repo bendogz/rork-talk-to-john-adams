@@ -15,6 +15,8 @@ interface AdamsStageProps {
   mouthLevelRef: MutableRefObject<number>;
   /** When the living portrait is streaming, it fills the frame on this layer. */
   didStream?: MediaStream | null;
+  /** A finished full-body motion of him in his picture, playing while he listens. */
+  motionClipUrl?: string | null;
 }
 
 /**
@@ -22,12 +24,20 @@ interface AdamsStageProps {
  * blinking, his lips moving with his voice — and when the living portrait is
  * streaming, the frame is his alone, real lips forming every word.
  */
-function AdamsStageComponent({ phase, mouthLevelRef, didStream }: AdamsStageProps) {
+function AdamsStageComponent({ phase, mouthLevelRef, didStream, motionClipUrl }: AdamsStageProps) {
   const isSpeaking = phase === "speaking";
   const [isLoaded, setIsLoaded] = useState<boolean>(false);
   const mouthImgRef = useRef<HTMLImageElement | null>(null);
   const eyesImgRef = useRef<HTMLImageElement | null>(null);
   const didVideoRef = useRef<HTMLVideoElement | null>(null);
+  const motionVideoRef = useRef<HTMLVideoElement | null>(null);
+
+  // A fresh motion on the stage starts playing at once.
+  useEffect(() => {
+    const el = motionVideoRef.current;
+    if (!el || !motionClipUrl) return;
+    void el.play().catch(() => undefined);
+  }, [motionClipUrl]);
 
   // Bind the living portrait's feed to its element whenever it arrives.
   useEffect(() => {
@@ -113,6 +123,18 @@ function AdamsStageComponent({ phase, mouthLevelRef, didStream }: AdamsStageProp
         <video
           ref={didVideoRef}
           autoPlay
+          playsInline
+          className="absolute inset-0 h-full w-full object-cover"
+        />
+      ) : motionClipUrl ? (
+        /* His whole body in motion — pacing, sitting, gesturing in his picture. */
+        <video
+          key={motionClipUrl}
+          ref={motionVideoRef}
+          src={motionClipUrl}
+          autoPlay
+          muted
+          loop
           playsInline
           className="absolute inset-0 h-full w-full object-cover"
         />

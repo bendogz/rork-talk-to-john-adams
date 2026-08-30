@@ -10,6 +10,8 @@ interface ImportMetaEnv {
   readonly VITE_OPENAI_API_KEY?: string;
   /** Built into the app: D-ID account that renders the living portrait. */
   readonly VITE_DID_API_KEY?: string;
+  /** Built into the app: Viggle account that animates his whole body. */
+  readonly VITE_VIGGLE_API_KEY?: string;
 }
 
 interface ImportMeta {
