@@ -30,13 +30,19 @@ function AdamsStageComponent({ phase, mouthLevelRef, didStream, motionClipUrl }:
   const mouthImgRef = useRef<HTMLImageElement | null>(null);
   const eyesImgRef = useRef<HTMLImageElement | null>(null);
   const didVideoRef = useRef<HTMLVideoElement | null>(null);
-  const motionVideoRef = useRef<HTMLVideoElement | null>(null);
+  /** The motion upon the stage, and the one dissolving away beneath it. */
+  const [currentMotion, setCurrentMotion] = useState<string | null>(motionClipUrl ?? null);
+  const [fadingMotion, setFadingMotion] = useState<string | null>(null);
+  const currentMotionRef = useRef<string | null>(currentMotion);
 
-  // A fresh motion on the stage starts playing at once.
+  // A change of posture dissolves rather than snaps.
   useEffect(() => {
-    const el = motionVideoRef.current;
-    if (!el || !motionClipUrl) return;
-    void el.play().catch(() => undefined);
+    if (motionClipUrl === currentMotionRef.current) return;
+    setFadingMotion(currentMotionRef.current);
+    currentMotionRef.current = motionClipUrl ?? null;
+    setCurrentMotion(motionClipUrl ?? null);
+    const timer = window.setTimeout(() => setFadingMotion(null), 1600);
+    return () => window.clearTimeout(timer);
   }, [motionClipUrl]);
 
   // Bind the living portrait's feed to its element whenever it arrives.
@@ -126,18 +132,31 @@ function AdamsStageComponent({ phase, mouthLevelRef, didStream, motionClipUrl }:
           playsInline
           className="absolute inset-0 h-full w-full object-cover"
         />
-      ) : motionClipUrl ? (
-        /* His whole body in motion — pacing, sitting, gesturing in his picture. */
-        <video
-          key={motionClipUrl}
-          ref={motionVideoRef}
-          src={motionClipUrl}
-          autoPlay
-          muted
-          loop
-          playsInline
-          className="absolute inset-0 h-full w-full object-cover"
-        />
+      ) : currentMotion !== null ? (
+        /* His whole body in motion — pacing, sitting, gesturing in his picture.
+           When he shifts his bearing, the last motion fades away beneath. */
+        <>
+          {fadingMotion !== null ? (
+            <video
+              key={`fade-${fadingMotion}`}
+              src={fadingMotion}
+              autoPlay
+              muted
+              loop
+              playsInline
+              className="motion-fade-out absolute inset-0 h-full w-full object-cover"
+            />
+          ) : null}
+          <video
+            key={currentMotion}
+            src={currentMotion}
+            autoPlay
+            muted
+            loop
+            playsInline
+            className="motion-fade-in absolute inset-0 h-full w-full object-cover"
+          />
+        </>
       ) : (
         <>
           <div className="adams-breathe absolute inset-0">
