@@ -32,6 +32,8 @@ export function isAgentEnabled(): boolean {
 export interface AdamsAgentCallbacks {
   /** The WebRTC video feed, ready for the stage — null when it ends. */
   onStream: (stream: MediaStream | null) => void;
+  /** The agent's reply, as its spoken message lands. */
+  onAnswer?: (text: string) => void;
   /** The connection could not be kept. */
   onFail: (message: string) => void;
 }
@@ -51,6 +53,11 @@ export async function createAdamsAgentSession(callbacks: AdamsAgentCallbacks): P
       onVideoStateChange: (state) => {
         if (state === StreamingState.Stop) callbacks.onStream(null);
       },
+      onNewMessage: (messages, type) => {
+        if (type !== "answer") return;
+        const last = messages[messages.length - 1];
+        if (last?.role === "assistant" && last.content) callbacks.onAnswer?.(last.content);
+      },
       onConnectionStateChange: (state) => {
         if (state === ConnectionState.Fail || state === ConnectionState.Closed) {
           callbacks.onFail(`connection ${state}`);
@@ -68,8 +75,18 @@ export async function createAdamsAgentSession(callbacks: AdamsAgentCallbacks): P
 }
 
 /**
- * Has him speak one piece of his answer on the stream. His voice is always
- * the pinned ElevenLabs one, so it can never drift from the portrait's voice.
+ * Puts a visitor's question to the agent. The agent itself listens, thinks,
+ * and speaks — the reply comes back as text while his voice plays through the
+ * living portrait. Returns the reply text (empty when the chat yields none).
+ */
+export async function chatWithAdamsAgent(manager: AgentManager, question: string): Promise<string> {
+  const response = await manager.chat(question);
+  return response?.result ?? "";
+}
+
+/**
+ * Has him speak one piece of text on the stream. His voice is always the
+ * pinned ElevenLabs one, so it can never drift from the portrait's voice.
  */
 export async function speakOnAdamsAgent(manager: AgentManager, text: string): Promise<void> {
   await manager.speak({

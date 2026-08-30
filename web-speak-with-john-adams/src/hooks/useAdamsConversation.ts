@@ -4,6 +4,7 @@ import { ADAMS_GREETING_SPEECH, type ChatTurn, type Exchange } from "@/lib/adams
 import type { AgentManager } from "@d-id/client-sdk";
 import {
   agentSleep,
+  chatWithAdamsAgent,
   chunkAnswer,
   createAdamsAgentSession,
   destroyAdamsAgentSession,
@@ -118,6 +119,8 @@ export function useAdamsConversation({ onAnswerComplete }: UseAdamsConversationO
   const agentRef = useRef<AgentManager | null>(null);
   const agentBootRef = useRef<Promise<AgentManager> | null>(null);
   const agentIdleTimerRef = useRef<number | null>(null);
+  /** The agent's latest reply, captured as its spoken message lands. */
+  const agentAnswerRef = useRef<string>("");
   const [didStream, setDidStream] = useState<MediaStream | null>(null);
 
   const clearRevealTimer = useCallback((): void => {
@@ -157,6 +160,9 @@ export function useAdamsConversation({ onAnswerComplete }: UseAdamsConversationO
 
     const callbacks: AdamsAgentCallbacks = {
       onStream: (stream) => setDidStream(stream),
+      onAnswer: (text) => {
+        agentAnswerRef.current = text;
+      },
       onFail: (message) => console.warn("[adams] living portrait connection changed", message),
     };
     const boot = createAdamsAgentSession(callbacks)
@@ -493,6 +499,45 @@ export function useAdamsConversation({ onAnswerComplete }: UseAdamsConversationO
         revealedAnswer: "",
         needsPlaybackTap: false,
       }));
+
+      // The agent's own mind first: he listens, considers, and speaks through
+      // the living portrait. The house pipeline stands in when the agent cannot.
+      if (isAgentEnabled()) {
+        try {
+          agentAnswerRef.current = "";
+          const manager = await ensureAgent();
+          const replied = await chatWithAdamsAgent(manager, question);
+          if (controller.signal.aborted) return;
+          const answer = replied || agentAnswerRef.current;
+          if (answer.length > 0) {
+            pendingAnswerRef.current = answer;
+            const exchange: Exchange = { id: createId(), question, answer };
+            exchangesRef.current = [...exchangesRef.current, exchange];
+            setState((prev) => ({
+              ...prev,
+              phase: "speaking",
+              exchanges: [...prev.exchanges, exchange],
+              viewIndex: prev.exchanges.length,
+              revealedAnswer: "",
+              error: null,
+              needsPlaybackTap: false,
+            }));
+            // Captions keep pace with the rendered voice; a small buffer lets
+            // the last words finish before the seal opens for the reply.
+            startReveal(answer, estimateSpeechSeconds(answer));
+            await agentSleep(estimateSpeechSeconds(answer) * 1000 + 1200);
+            if (controller.signal.aborted) return;
+            finishSpeaking();
+            onAnswerCompleteRef.current?.();
+            return;
+          }
+          console.warn("[adams] the agent answered with silence; falling back");
+        } catch (agentError) {
+          if (controller.signal.aborted) return;
+          console.warn("[adams] the agent's mind failed; falling back", agentError);
+          destroyAgent();
+        }
+      }
 
       try {
         // The greeting carries no question, so it is not offered as context.

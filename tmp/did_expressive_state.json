@@ -1,0 +1,23 @@
+{
+  "consent_id": "cst_M0QB8zawW9AXJRTrsMO9B",
+  "consent_text": "I, [user name] confirm that I have all the necessary rights or consents to use this footage and voice recording for creating an Avatar from my 'User Submission' all in accordance with the Terms of Use. This is my dynamic passcode frog, bush, haze",
+  "talk_id": "tlk_mgc27sJdljc4_m1MfSx-x",
+  "consent_status": "done",
+  "avatar_id": "avt_Xn7NRZTSbwUG_VmYtlYbf",
+  "v2_agent_id": null,
+  "v2_client_key": null,
+  "talk_status": "done",
+  "talk_url": "https://d-id-talks-prod.s3.us-west-2.amazonaws.com/google-oauth2%7C116081849206873258456/tlk_mgc27sJdljc4_m1MfSx-x/1788133058531.mp4?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Credential=AKIA5CUMPJBIK65W6FGA%2F20260830%2Fus-west-2%2Fs3%2Faws4_request&X-Amz-Date=20260830T233812Z&X-Amz-Expires=86400&X-Amz-Signature=90b6072f29efe886a5328a46c03b892a0502d766cb7c4f7d4274ba4f4fec797c&X-Amz-SignedHeaders=host&x-amz-checksum-mode=ENABLED&x-id=GetObject",
+  "consent_submitted": true,
+  "consent_detail": {
+    "id": "cst_M0QB8zawW9AXJRTrsMO9B",
+    "created_at": "2026-08-30T23:36:25.119Z",
+    "modified_at": "2026-08-30T23:38:37.791Z",
+    "created_by": "google-oauth2|116081849206873258456",
+    "thumbnail_url": "https://consents.d-id.com/google-oauth2|116081849206873258456/cst_M0QB8zawW9AXJRTrsMO9B/thumbnail.png",
+    "video_url": "https://consents.d-id.com/google-oauth2|116081849206873258456/cst_M0QB8zawW9AXJRTrsMO9B/video.mp4",
+    "status": "done",
+    "name": "John Adams"
+  },
+  "avatar_status": "error"
+}
