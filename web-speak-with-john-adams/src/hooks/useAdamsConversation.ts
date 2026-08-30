@@ -385,7 +385,9 @@ export function useAdamsConversation({ onAnswerComplete }: UseAdamsConversationO
           for (const chunk of chunks) {
             if (signal.aborted) return;
             await speakOnDidSession(session, chunk);
-            await didSleep(estimateSpeechSeconds(chunk) * 1000);
+            // A small buffer after the estimate keeps chunks from colliding,
+            // which is what made his voice catch and turn synthetic.
+            await didSleep(estimateSpeechSeconds(chunk) * 1000 + 300);
           }
           await didSleep(1200);
           if (signal.aborted) return;

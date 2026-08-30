@@ -111,99 +111,101 @@ function AdamsStageComponent({ phase, mouthLevelRef, didStream }: AdamsStageProp
 
   return (
     <div className="pointer-events-none absolute inset-0 overflow-hidden bg-stage" aria-hidden="true">
-      <div className="adams-breathe absolute inset-0">
-        {/* Standing, holding forth: lips and blinks live on this layer. */}
-        <div className={cn(layerClass, isSpeaking ? "opacity-100" : "opacity-0")}>
-          <img
-            src={ADAMS_PORTRAIT_URL}
-            alt=""
-            className={cn(frameClass, isLoaded ? "opacity-100" : "opacity-0")}
-            draggable={false}
-          />
-
-          {ADAMS_MOUTH_OPEN_URL ? (
-            <img
-              ref={mouthImgRef}
-              src={ADAMS_MOUTH_OPEN_URL}
-              alt=""
-              className={cn(frameClass, "opacity-0")}
-              draggable={false}
-            />
-          ) : null}
-
-          {ADAMS_EYES_CLOSED_URL ? (
-            <img
-              ref={eyesImgRef}
-              src={ADAMS_EYES_CLOSED_URL}
-              alt=""
-              className={cn(frameClass, "opacity-0")}
-              draggable={false}
-            />
-          ) : null}
-        </div>
-
-        {/* At his ease: seated by the fire, the frame quietly alive while he listens. */}
-        <div className={cn(layerClass, isSpeaking ? "opacity-0" : "opacity-100")}>
-          <img
-            src={ADAMS_SEATED_URL ?? ADAMS_PORTRAIT_URL}
-            alt=""
-            className={cn(frameClass, isLoaded ? "opacity-100" : "opacity-0")}
-            draggable={false}
-          />
-
-          {!isSpeaking && ADAMS_AMBIENT_VIDEO_URL ? (
-            <video
-              src={ADAMS_AMBIENT_VIDEO_URL}
-              autoPlay
-              muted
-              loop
-              playsInline
-              className={frameClass}
-            />
-          ) : null}
-        </div>
-      </div>
-
-      {/* The living portrait, when streaming: real lips, real motion. */}
       {didStream ? (
+        /* Him alone: the live stream fills the frame; nothing else is shown. */
         <video
           ref={didVideoRef}
           autoPlay
           playsInline
           className="absolute inset-0 h-full w-full object-cover"
         />
-      ) : null}
+      ) : (
+        <>
+          <div className="adams-breathe absolute inset-0">
+            {/* Standing, holding forth: lips and blinks live on this layer. */}
+            <div className={cn(layerClass, isSpeaking ? "opacity-100" : "opacity-0")}>
+              <img
+                src={ADAMS_PORTRAIT_URL}
+                alt=""
+                className={cn(frameClass, isLoaded ? "opacity-100" : "opacity-0")}
+                draggable={false}
+              />
 
-      {/* Candle glow at the left of the scene */}
-      <div className="animate-candle-flicker absolute left-[14%] top-[38%] h-[38vh] w-[38vh] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[radial-gradient(circle,hsl(38_85%_62%/0.24),transparent_65%)]" />
+              {ADAMS_MOUTH_OPEN_URL ? (
+                <img
+                  ref={mouthImgRef}
+                  src={ADAMS_MOUTH_OPEN_URL}
+                  alt=""
+                  className={cn(frameClass, "opacity-0")}
+                  draggable={false}
+                />
+              ) : null}
 
-      {/* Edge vignette — deepens while he speaks so the caption carries the eye */}
-      <div
-        className={cn(
-          "absolute inset-0 transition-opacity duration-700",
-          isSpeaking ? "opacity-100" : "opacity-80",
-        )}
-        style={{
-          background:
-            "radial-gradient(120% 85% at 50% 34%, transparent 28%, hsl(34 40% 4% / 0.5) 72%, hsl(34 45% 3% / 0.9) 100%)",
-        }}
-      />
+              {ADAMS_EYES_CLOSED_URL ? (
+                <img
+                  ref={eyesImgRef}
+                  src={ADAMS_EYES_CLOSED_URL}
+                  alt=""
+                  className={cn(frameClass, "opacity-0")}
+                  draggable={false}
+                />
+              ) : null}
+            </div>
 
-      {/* Floor of shadow beneath the floating parchment */}
-      <div
-        className={cn(
-          "absolute inset-x-0 bottom-0 h-[62%] transition-opacity duration-700",
-          isSpeaking ? "opacity-100" : "opacity-85",
-        )}
-        style={{
-          background: "linear-gradient(to top, hsl(34 45% 3% / 0.94), hsl(34 40% 5% / 0.5) 46%, transparent)",
-        }}
-      />
+            {/* At his ease: seated by the fire, the frame quietly alive while he listens. */}
+            <div className={cn(layerClass, isSpeaking ? "opacity-0" : "opacity-100")}>
+              <img
+                src={ADAMS_SEATED_URL ?? ADAMS_PORTRAIT_URL}
+                alt=""
+                className={cn(frameClass, isLoaded ? "opacity-100" : "opacity-0")}
+                draggable={false}
+              />
 
-      <div
-        className="absolute inset-x-0 top-0 h-32"
-        style={{ background: "linear-gradient(to bottom, hsl(34 45% 3% / 0.6), transparent)" }}
-      />
+              {!isSpeaking && ADAMS_AMBIENT_VIDEO_URL ? (
+                <video
+                  src={ADAMS_AMBIENT_VIDEO_URL}
+                  autoPlay
+                  muted
+                  loop
+                  playsInline
+                  className={frameClass}
+                />
+              ) : null}
+            </div>
+          </div>
+
+          {/* Candle glow at the left of the scene */}
+          <div className="animate-candle-flicker absolute left-[14%] top-[38%] h-[38vh] w-[38vh] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[radial-gradient(circle,hsl(38_85%_62%/0.24),transparent_65%)]" />
+
+          {/* Edge vignette — deepens while he speaks so the caption carries the eye */}
+          <div
+            className={cn(
+              "absolute inset-0 transition-opacity duration-700",
+              isSpeaking ? "opacity-100" : "opacity-80",
+            )}
+            style={{
+              background:
+                "radial-gradient(120% 85% at 50% 34%, transparent 28%, hsl(34 40% 4% / 0.5) 72%, hsl(34 45% 3% / 0.9) 100%)",
+            }}
+          />
+
+          {/* Floor of shadow beneath the floating parchment */}
+          <div
+            className={cn(
+              "absolute inset-x-0 bottom-0 h-[62%] transition-opacity duration-700",
+              isSpeaking ? "opacity-100" : "opacity-85",
+            )}
+            style={{
+              background: "linear-gradient(to top, hsl(34 45% 3% / 0.94), hsl(34 40% 5% / 0.5) 46%, transparent)",
+            }}
+          />
+
+          <div
+            className="absolute inset-x-0 top-0 h-32"
+            style={{ background: "linear-gradient(to bottom, hsl(34 45% 3% / 0.6), transparent)" }}
+          />
+        </>
+      )}
     </div>
   );
 }

@@ -7,7 +7,7 @@ import { ADAMS_VOICE_ID } from "@/lib/adams";
 import { getSettings } from "@/lib/settings";
 
 const API_BASE = "https://api.elevenlabs.io/v1";
-const TTS_MODEL = "eleven_turbo_v2_5";
+const TTS_MODEL = "eleven_multilingual_v2";
 const OUTPUT_FORMAT = "mp3_44100_128";
 
 /** Errors surfaced to the visitor are phrased in plain, calm language. */
@@ -70,7 +70,7 @@ export async function speakWithElevenLabs(
   const voiceId = options.voiceId || settings.elevenlabsVoiceId || ADAMS_VOICE_ID;
 
   const response = await fetch(
-    `${API_BASE}/text-to-speech/${voiceId}?output_format=${OUTPUT_FORMAT}&optimize_streaming_latency=3`,
+    `${API_BASE}/text-to-speech/${voiceId}?output_format=${OUTPUT_FORMAT}&optimize_streaming_latency=2`,
     {
       method: "POST",
       headers: { "xi-api-key": apiKey, "Content-Type": "application/json" },
@@ -79,9 +79,9 @@ export async function speakWithElevenLabs(
         text,
         model_id: TTS_MODEL,
         voice_settings: {
-          stability: 0.45,
+          stability: 0.55,
           similarity_boost: 0.75,
-          style: 0.35,
+          style: 0.25,
           use_speaker_boost: true,
         },
       }),

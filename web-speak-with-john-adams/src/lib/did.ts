@@ -5,11 +5,11 @@
  * here falls back to the plain voice pipeline.
  */
 
-import { ADAMS_PORTRAIT_URL, ADAMS_VOICE_ID } from "@/lib/adams";
+import { ADAMS_PORTRAIT_URL, ADAMS_SEATED_URL, ADAMS_VOICE_ID } from "@/lib/adams";
 import { getSettings } from "@/lib/settings";
 
 const API_BASE = "https://api.d-id.com";
-const MAX_CHUNK_CHARS = 240;
+const MAX_CHUNK_CHARS = 500;
 const WORDS_PER_SECOND = 2.4;
 const CONNECT_TIMEOUT_MS = 12000;
 
@@ -80,7 +80,7 @@ export async function createDidSession(): Promise<DidSession> {
   const response = await fetch(`${API_BASE}/talks/streams`, {
     method: "POST",
     headers: authHeaders(),
-    body: JSON.stringify({ source_url: ADAMS_PORTRAIT_URL, stream_warmup: true }),
+    body: JSON.stringify({ source_url: ADAMS_SEATED_URL ?? ADAMS_PORTRAIT_URL, stream_warmup: true }),
   });
   if (!response.ok) {
     console.error("[adams] D-ID stream creation failed", response.status);
@@ -161,10 +161,11 @@ export async function speakOnDidSession(session: DidSession, text: string): Prom
         provider: {
           type: "elevenlabs",
           voice_id: getSettings().elevenlabsVoiceId || ADAMS_VOICE_ID,
-          elevenlabs_voice_settings: {
-            stability: 0.45,
+          // NB: D-ID reads `voice_config`, not `elevenlabs_voice_settings`.
+          voice_config: {
+            stability: 0.55,
             similarity_boost: 0.75,
-            style: 0.35,
+            style: 0.25,
             use_speaker_boost: true,
           },
         },
