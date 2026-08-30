@@ -1,16 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
 
 import { ADAMS_GREETING_SPEECH, type ChatTurn, type Exchange } from "@/lib/adams";
-import {
-  chunkAnswer,
-  createDidSession,
-  destroyDidSession,
-  didSleep,
-  estimateSpeechSeconds,
-  isDidEnabled,
-  speakOnDidSession,
-  type DidSession,
-} from "@/lib/did";
 import { ElevenLabsError, speakWithElevenLabs } from "@/lib/elevenlabs";
 import { askAdamsWithOpenAI, OpenAIError, speakAsAdamsWithOpenAI } from "@/lib/openai";
 import { getSettings } from "@/lib/settings";
@@ -111,11 +101,6 @@ export function useAdamsConversation({ onAnswerComplete }: UseAdamsConversationO
   /** Keeps the phone's screen awake while he speaks, so a long answer is never lost. */
   const wakeLockRef = useRef<{ release: () => Promise<void> } | null>(null);
 
-  // The living portrait: a D-ID stream, held open between answers for quick reuse.
-  const didSessionRef = useRef<DidSession | null>(null);
-  const didIdleTimerRef = useRef<number | null>(null);
-  const [didStream, setDidStream] = useState<MediaStream | null>(null);
-
   const clearRevealTimer = useCallback((): void => {
     if (revealTimerRef.current !== null) {
       window.clearInterval(revealTimerRef.current);
@@ -171,44 +156,13 @@ export function useAdamsConversation({ onAnswerComplete }: UseAdamsConversationO
     stopMouthAnimation();
   }, [stopMouthAnimation]);
 
-  /** Closes the living portrait, so no studio minutes are spent while he listens. */
-  const destroyDid = useCallback((): void => {
-    if (didIdleTimerRef.current !== null) {
-      window.clearTimeout(didIdleTimerRef.current);
-      didIdleTimerRef.current = null;
-    }
-    const session = didSessionRef.current;
-    didSessionRef.current = null;
-    setDidStream(null);
-    if (session) void destroyDidSession(session);
-  }, []);
-
-  const scheduleDidIdleClose = useCallback((): void => {
-    if (didIdleTimerRef.current !== null) window.clearTimeout(didIdleTimerRef.current);
-    didIdleTimerRef.current = window.setTimeout(() => {
-      didIdleTimerRef.current = null;
-      destroyDid();
-    }, 150000);
-  }, [destroyDid]);
-
-  const ensureDid = useCallback(async (): Promise<DidSession> => {
-    scheduleDidIdleClose();
-    const existing = didSessionRef.current;
-    if (existing) return existing;
-    const session = await createDidSession();
-    didSessionRef.current = session;
-    setDidStream(session.stream);
-    return session;
-  }, [scheduleDidIdleClose]);
-
   useEffect(() => {
     return () => {
       clearRevealTimer();
       releaseAudio();
       abortRef.current?.abort();
-      destroyDid();
     };
-  }, [clearRevealTimer, destroyDid, releaseAudio]);
+  }, [clearRevealTimer, releaseAudio]);
 
   // Keep the thread of conversation, so a visitor returning to the page resumes it.
   // The spoken introduction carries no question, so it is not kept.
@@ -367,40 +321,13 @@ export function useAdamsConversation({ onAnswerComplete }: UseAdamsConversationO
   }, []);
 
   const stopSpeaking = useCallback((): void => {
-    destroyDid();
     finishSpeaking();
-  }, [destroyDid, finishSpeaking]);
+  }, [finishSpeaking]);
 
-  /** Has his reply spoken — as a living, lip-synced portrait when D-ID is at
-   * hand, and otherwise as voice alone — captions keeping pace throughout. */
+  /** Has his reply spoken — his pinned voice while the moving portrait plays,
+   * captions keeping pace throughout. */
   const speakAndPlay = useCallback(
-    async (answer: string, signal: AbortSignal, options: { allowDid?: boolean } = {}): Promise<void> => {
-      // The living portrait: real lips forming his words over WebRTC.
-      if (options.allowDid !== false && isDidEnabled()) {
-        try {
-          const session = await ensureDid();
-          const chunks = chunkAnswer(answer);
-          const totalSeconds = chunks.reduce((sum, chunk) => sum + estimateSpeechSeconds(chunk), 0);
-          startReveal(answer, totalSeconds);
-          for (const chunk of chunks) {
-            if (signal.aborted) return;
-            await speakOnDidSession(session, chunk);
-            // A small buffer after the estimate keeps chunks from colliding,
-            // which is what made his voice catch and turn synthetic.
-            await didSleep(estimateSpeechSeconds(chunk) * 1000 + 300);
-          }
-          await didSleep(1200);
-          if (signal.aborted) return;
-          finishSpeaking();
-          onAnswerCompleteRef.current?.();
-          return;
-        } catch (didError) {
-          if (signal.aborted) return;
-          console.warn("[adams] living portrait unavailable; falling back to voice alone", didError);
-          destroyDid();
-        }
-      }
-
+    async (answer: string, signal: AbortSignal): Promise<void> => {
       try {
         const voiceSettings = getSettings();
         // His voice: the visitor's own ElevenLabs account first, their OpenAI
@@ -427,7 +354,7 @@ export function useAdamsConversation({ onAnswerComplete }: UseAdamsConversationO
         }, Math.max(2600, answer.split(/\s+/).length * 380));
       }
     },
-    [destroyDid, ensureDid, finishSpeaking, playAudio, startReveal, startSimulatedMouth],
+    [finishSpeaking, playAudio, startReveal, startSimulatedMouth],
   );
 
   // A first visit earns a spoken introduction: who he is, and a curiosity.
@@ -450,7 +377,7 @@ export function useAdamsConversation({ onAnswerComplete }: UseAdamsConversationO
       error: null,
       needsPlaybackTap: false,
     }));
-    void speakAndPlay(greeting.answer, controller.signal, { allowDid: false });
+    void speakAndPlay(greeting.answer, controller.signal);
   }, [restoredExchanges, speakAndPlay]);
 
   const ask = useCallback(
@@ -459,7 +386,6 @@ export function useAdamsConversation({ onAnswerComplete }: UseAdamsConversationO
       if (question.length === 0) return;
 
       abortRef.current?.abort();
-      destroyDid();
       const controller = new AbortController();
       abortRef.current = controller;
 
@@ -521,7 +447,7 @@ export function useAdamsConversation({ onAnswerComplete }: UseAdamsConversationO
         }));
       }
     },
-    [clearRevealTimer, destroyDid, releaseAudio, speakAndPlay],
+    [clearRevealTimer, releaseAudio, speakAndPlay],
   );
 
   const showPrevious = useCallback((): void => {
@@ -551,7 +477,6 @@ export function useAdamsConversation({ onAnswerComplete }: UseAdamsConversationO
 
   return {
     phase: state.phase,
-    didStream,
     exchanges: state.exchanges,
     currentExchange,
     viewIndex: state.viewIndex,

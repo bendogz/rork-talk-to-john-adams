@@ -13,29 +13,20 @@ interface AdamsStageProps {
   phase: StagePhase;
   /** Live mouth-open level (0..1) sampled from his voice. */
   mouthLevelRef: MutableRefObject<number>;
-  /** When the living portrait is streaming, it fills the frame on this layer. */
-  didStream?: MediaStream | null;
+  /** While he answers, a Viggle clip of him mid-address loops over the scene. */
+  answerMotionUrl?: string | null;
 }
 
 /**
  * The full-bleed candlelit scene, alive in its frame: Adams stands — breathing,
- * blinking, his lips moving with his voice — and when the living portrait is
- * streaming, the frame is his alone, real lips forming every word.
+ * blinking, his lips moving with his voice — and while he answers, a clip of
+ * him mid-address loops in that same room, so he moves as he speaks.
  */
-function AdamsStageComponent({ phase, mouthLevelRef, didStream }: AdamsStageProps) {
+function AdamsStageComponent({ phase, mouthLevelRef, answerMotionUrl }: AdamsStageProps) {
   const isSpeaking = phase === "speaking";
   const [isLoaded, setIsLoaded] = useState<boolean>(false);
   const mouthImgRef = useRef<HTMLImageElement | null>(null);
   const eyesImgRef = useRef<HTMLImageElement | null>(null);
-  const didVideoRef = useRef<HTMLVideoElement | null>(null);
-
-  // Bind the living portrait's feed to its element whenever it arrives.
-  useEffect(() => {
-    const el = didVideoRef.current;
-    if (!el || !didStream) return;
-    if (el.srcObject !== didStream) el.srcObject = didStream;
-    void el.play().catch(() => undefined);
-  }, [didStream]);
 
   // Preload the face variants so the first cross-fade does not pop.
   useEffect(() => {
@@ -108,18 +99,9 @@ function AdamsStageComponent({ phase, mouthLevelRef, didStream }: AdamsStageProp
 
   return (
     <div className="pointer-events-none absolute inset-0 overflow-hidden bg-stage" aria-hidden="true">
-      {didStream ? (
-        /* Him alone: the live stream fills the frame; nothing else is shown. */
-        <video
-          ref={didVideoRef}
-          autoPlay
-          playsInline
-          className="absolute inset-0 h-full w-full object-cover"
-        />
-      ) : (
-        <>
+      <>
+          {/* The room itself: he stands, holding forth — lips and blinks live here. */}
           <div className="adams-breathe absolute inset-0">
-            {/* He stands, holding forth: lips and blinks live on this layer. */}
             <div className={layerClass}>
               <img
                 src={ADAMS_PORTRAIT_URL}
@@ -149,6 +131,21 @@ function AdamsStageComponent({ phase, mouthLevelRef, didStream }: AdamsStageProp
               ) : null}
             </div>
           </div>
+
+          {/* Him in motion: while he answers, a clip of him mid-address loops
+              in this same room, melting away when the answer ends — never
+              cutting to another place or time. */}
+          {isSpeaking && answerMotionUrl ? (
+            <video
+              key={answerMotionUrl}
+              src={answerMotionUrl}
+              autoPlay
+              muted
+              loop
+              playsInline
+              className="motion-fade-in absolute inset-0 h-full w-full object-cover"
+            />
+          ) : null}
 
           {/* Candle glow at the left of the scene */}
           <div className="animate-candle-flicker absolute left-[14%] top-[38%] h-[38vh] w-[38vh] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[radial-gradient(circle,hsl(38_85%_62%/0.24),transparent_65%)]" />
@@ -180,8 +177,7 @@ function AdamsStageComponent({ phase, mouthLevelRef, didStream }: AdamsStageProp
             className="absolute inset-x-0 top-0 h-32"
             style={{ background: "linear-gradient(to bottom, hsl(34 45% 3% / 0.6), transparent)" }}
           />
-        </>
-      )}
+      </>
     </div>
   );
 }

@@ -8,6 +8,7 @@ import { StageHeader } from "@/components/StageHeader";
 import { VoiceOrb } from "@/components/VoiceOrb";
 import { useAdamsConversation } from "@/hooks/useAdamsConversation";
 import { useVoiceInput } from "@/hooks/useVoiceInput";
+import { speakingClipForAnswer } from "@/lib/motions";
 
 const Index = () => {
   const [lastQuestion, setLastQuestion] = useState<string>("");
@@ -19,7 +20,6 @@ const Index = () => {
 
   const {
     phase,
-    didStream,
     exchanges,
     currentExchange,
     viewIndex,
@@ -41,6 +41,10 @@ const Index = () => {
   });
 
   const busy = phase === "considering";
+
+  /** While he answers, he moves: one steady clip of him mid-address, chosen
+   * by the answer's place in the conversation, looping in his own room. */
+  const answerMotionUrl = phase === "speaking" ? speakingClipForAnswer(exchanges.length).url : null;
 
   const handleAsk = useCallback((question: string): void => {
     askRef.current(question);
@@ -100,7 +104,7 @@ const Index = () => {
 
   return (
     <main className="relative flex h-[100dvh] w-full flex-col overflow-hidden bg-stage">
-      <AdamsStage phase={phase} mouthLevelRef={mouthLevelRef} didStream={didStream} />
+      <AdamsStage phase={phase} mouthLevelRef={mouthLevelRef} answerMotionUrl={answerMotionUrl} />
 
       <StageHeader phase={phase} />
 
