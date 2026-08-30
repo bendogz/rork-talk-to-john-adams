@@ -13,20 +13,21 @@ interface AdamsStageProps {
   phase: StagePhase;
   /** Live mouth-open level (0..1) sampled from his voice. */
   mouthLevelRef: MutableRefObject<number>;
-  /** While he answers, a Viggle clip of him mid-address loops over the scene. */
-  answerMotionUrl?: string | null;
+  /** The living portrait: D-ID's live video of him, lips forming his words. */
+  didStream?: MediaStream | null;
 }
 
 /**
  * The full-bleed candlelit scene, alive in its frame: Adams stands — breathing,
- * blinking, his lips moving with his voice — and while he answers, a clip of
- * him mid-address loops in that same room, so he moves as he speaks.
+ * blinking — and while he answers, the live D-ID stream takes the stage, his
+ * lips forming his words in that same room.
  */
-function AdamsStageComponent({ phase, mouthLevelRef, answerMotionUrl }: AdamsStageProps) {
+function AdamsStageComponent({ phase, mouthLevelRef, didStream }: AdamsStageProps) {
   const isSpeaking = phase === "speaking";
   const [isLoaded, setIsLoaded] = useState<boolean>(false);
   const mouthImgRef = useRef<HTMLImageElement | null>(null);
   const eyesImgRef = useRef<HTMLImageElement | null>(null);
+  const didVideoRef = useRef<HTMLVideoElement | null>(null);
 
   // Preload the face variants so the first cross-fade does not pop.
   useEffect(() => {
@@ -62,6 +63,18 @@ function AdamsStageComponent({ phase, mouthLevelRef, answerMotionUrl }: AdamsSta
     frame = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frame);
   }, [mouthLevelRef]);
+
+  // Feed the live D-ID stream to the video element and keep it playing.
+  useEffect(() => {
+    const el = didVideoRef.current;
+    if (!el) return;
+    if (didStream) {
+      if (el.srcObject !== didStream) el.srcObject = didStream;
+      void el.play().catch(() => undefined);
+    } else {
+      el.srcObject = null;
+    }
+  }, [didStream]);
 
   // Natural blinks every few seconds, with the occasional double-blink.
   useEffect(() => {
@@ -132,18 +145,14 @@ function AdamsStageComponent({ phase, mouthLevelRef, answerMotionUrl }: AdamsSta
             </div>
           </div>
 
-          {/* Him in motion: while he answers, a clip of him mid-address loops
-              in this same room, melting away when the answer ends — never
-              cutting to another place or time. */}
-          {isSpeaking && answerMotionUrl ? (
+          {/* Him alive: while the portrait studio streams, his lips form his
+              words in this same room, melting back to the painting when it rests. */}
+          {didStream ? (
             <video
-              key={answerMotionUrl}
-              src={answerMotionUrl}
+              ref={didVideoRef}
               autoPlay
-              muted
-              loop
               playsInline
-              className="motion-fade-in absolute inset-0 h-full w-full object-cover"
+              className={cn(frameClass, "motion-fade-in")}
             />
           ) : null}
 

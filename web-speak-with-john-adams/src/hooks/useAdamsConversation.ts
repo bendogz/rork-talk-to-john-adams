@@ -1,6 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
 
 import { ADAMS_GREETING_SPEECH, type ChatTurn, type Exchange } from "@/lib/adams";
+import type { AgentManager } from "@d-id/client-sdk";
+import {
+  agentSleep,
+  chunkAnswer,
+  createAdamsAgentSession,
+  destroyAdamsAgentSession,
+  DID_IDLE_CLOSE_MS,
+  estimateSpeechSeconds,
+  isAgentEnabled,
+  speakOnAdamsAgent,
+  type AdamsAgentCallbacks,
+} from "@/lib/didAgent";
 import { ElevenLabsError, speakWithElevenLabs } from "@/lib/elevenlabs";
 import { askAdamsWithOpenAI, OpenAIError, speakAsAdamsWithOpenAI } from "@/lib/openai";
 import { getSettings } from "@/lib/settings";
@@ -101,12 +113,65 @@ export function useAdamsConversation({ onAnswerComplete }: UseAdamsConversationO
   /** Keeps the phone's screen awake while he speaks, so a long answer is never lost. */
   const wakeLockRef = useRef<{ release: () => Promise<void> } | null>(null);
 
+  // The living portrait: a D-ID agent stream, opened on demand and held open
+  // between answers for quick reuse.
+  const agentRef = useRef<AgentManager | null>(null);
+  const agentBootRef = useRef<Promise<AgentManager> | null>(null);
+  const agentIdleTimerRef = useRef<number | null>(null);
+  const [didStream, setDidStream] = useState<MediaStream | null>(null);
+
   const clearRevealTimer = useCallback((): void => {
     if (revealTimerRef.current !== null) {
       window.clearInterval(revealTimerRef.current);
       revealTimerRef.current = null;
     }
   }, []);
+
+  const clearAgentIdleTimer = useCallback((): void => {
+    if (agentIdleTimerRef.current !== null) {
+      window.clearTimeout(agentIdleTimerRef.current);
+      agentIdleTimerRef.current = null;
+    }
+  }, []);
+
+  /** Closes the living portrait, so no studio minutes are spent while he listens. */
+  const destroyAgent = useCallback((): void => {
+    clearAgentIdleTimer();
+    const manager = agentRef.current;
+    agentRef.current = null;
+    agentBootRef.current = null;
+    setDidStream(null);
+    if (manager) void destroyAdamsAgentSession(manager);
+  }, [clearAgentIdleTimer]);
+
+  const scheduleAgentIdleClose = useCallback((): void => {
+    clearAgentIdleTimer();
+    agentIdleTimerRef.current = window.setTimeout(() => destroyAgent(), DID_IDLE_CLOSE_MS);
+  }, [clearAgentIdleTimer, destroyAgent]);
+
+  const ensureAgent = useCallback(async (): Promise<AgentManager> => {
+    scheduleAgentIdleClose();
+    const existing = agentRef.current;
+    if (existing) return existing;
+    if (agentBootRef.current) return agentBootRef.current;
+
+    const callbacks: AdamsAgentCallbacks = {
+      onStream: (stream) => setDidStream(stream),
+      onFail: (message) => console.warn("[adams] living portrait connection changed", message),
+    };
+    const boot = createAdamsAgentSession(callbacks)
+      .then((manager) => {
+        agentRef.current = manager;
+        agentBootRef.current = null;
+        return manager;
+      })
+      .catch((bootError: unknown) => {
+        agentBootRef.current = null;
+        throw bootError;
+      });
+    agentBootRef.current = boot;
+    return boot;
+  }, [scheduleAgentIdleClose]);
 
   const acquireWakeLock = useCallback((): void => {
     const nav = navigator as Navigator & {
@@ -161,8 +226,9 @@ export function useAdamsConversation({ onAnswerComplete }: UseAdamsConversationO
       clearRevealTimer();
       releaseAudio();
       abortRef.current?.abort();
+      destroyAgent();
     };
-  }, [clearRevealTimer, releaseAudio]);
+  }, [clearRevealTimer, destroyAgent, releaseAudio]);
 
   // Keep the thread of conversation, so a visitor returning to the page resumes it.
   // The spoken introduction carries no question, so it is not kept.
@@ -321,13 +387,40 @@ export function useAdamsConversation({ onAnswerComplete }: UseAdamsConversationO
   }, []);
 
   const stopSpeaking = useCallback((): void => {
+    destroyAgent();
     finishSpeaking();
-  }, [finishSpeaking]);
+  }, [destroyAgent, finishSpeaking]);
 
-  /** Has his reply spoken — his pinned voice while the moving portrait plays,
-   * captions keeping pace throughout. */
+  /** Has his reply spoken — as a living, lip-synced portrait when D-ID is at
+   * hand, and otherwise as voice alone — captions keeping pace throughout. */
   const speakAndPlay = useCallback(
     async (answer: string, signal: AbortSignal): Promise<void> => {
+      // The living portrait: real lips forming his words over WebRTC.
+      if (isAgentEnabled()) {
+        try {
+          const manager = await ensureAgent();
+          const chunks = chunkAnswer(answer);
+          const totalSeconds = chunks.reduce((sum, chunk) => sum + estimateSpeechSeconds(chunk), 0);
+          startReveal(answer, totalSeconds);
+          for (const chunk of chunks) {
+            if (signal.aborted) return;
+            await speakOnAdamsAgent(manager, chunk);
+            // A small buffer after the estimate keeps chunks from colliding,
+            // which is what made his voice catch and turn synthetic.
+            await agentSleep(estimateSpeechSeconds(chunk) * 1000 + 400);
+          }
+          await agentSleep(1000);
+          if (signal.aborted) return;
+          finishSpeaking();
+          onAnswerCompleteRef.current?.();
+          return;
+        } catch (agentError) {
+          if (signal.aborted) return;
+          console.warn("[adams] living portrait unavailable; falling back to voice alone", agentError);
+          destroyAgent();
+        }
+      }
+
       try {
         const voiceSettings = getSettings();
         // His voice: the visitor's own ElevenLabs account first, their OpenAI
@@ -354,7 +447,7 @@ export function useAdamsConversation({ onAnswerComplete }: UseAdamsConversationO
         }, Math.max(2600, answer.split(/\s+/).length * 380));
       }
     },
-    [finishSpeaking, playAudio, startReveal, startSimulatedMouth],
+    [destroyAgent, ensureAgent, finishSpeaking, playAudio, startReveal, startSimulatedMouth],
   );
 
   // A first visit earns a spoken introduction: who he is, and a curiosity.
@@ -477,6 +570,7 @@ export function useAdamsConversation({ onAnswerComplete }: UseAdamsConversationO
 
   return {
     phase: state.phase,
+    didStream,
     exchanges: state.exchanges,
     currentExchange,
     viewIndex: state.viewIndex,
