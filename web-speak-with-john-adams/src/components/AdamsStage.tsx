@@ -2,16 +2,14 @@ import { memo, useEffect, useRef, useState, type MutableRefObject } from "react"
 
 import type { StagePhase } from "@/hooks/useAdamsConversation";
 import {
-  ADAMS_AMBIENT_VIDEO_URL,
   ADAMS_EYES_CLOSED_URL,
   ADAMS_MOUTH_OPEN_URL,
   ADAMS_PORTRAIT_URL,
-  ADAMS_SEATED_URL,
 } from "@/lib/adams";
 import { cn } from "@/lib/utils";
 
 interface AdamsStageProps {
-  /** The scene's moment: he stands to hold forth, and sits at his ease otherwise. */
+  /** The scene's moment: standing and holding forth while he speaks. */
   phase: StagePhase;
   /** Live mouth-open level (0..1) sampled from his voice. */
   mouthLevelRef: MutableRefObject<number>;
@@ -20,10 +18,9 @@ interface AdamsStageProps {
 }
 
 /**
- * The full-bleed candlelit scene, alive in its frame: while he holds forth,
- * Adams stands — breathing, blinking, his lips moving with his voice — and
- * between replies the scene eases into him seated by the fire, cider in hand,
- * an ambience of gentle motion playing while he listens.
+ * The full-bleed candlelit scene, alive in its frame: Adams stands — breathing,
+ * blinking, his lips moving with his voice — and when the living portrait is
+ * streaming, the frame is his alone, real lips forming every word.
  */
 function AdamsStageComponent({ phase, mouthLevelRef, didStream }: AdamsStageProps) {
   const isSpeaking = phase === "speaking";
@@ -42,7 +39,7 @@ function AdamsStageComponent({ phase, mouthLevelRef, didStream }: AdamsStageProp
 
   // Preload the face variants so the first cross-fade does not pop.
   useEffect(() => {
-    const sources = [ADAMS_PORTRAIT_URL, ADAMS_MOUTH_OPEN_URL, ADAMS_EYES_CLOSED_URL, ADAMS_SEATED_URL];
+    const sources = [ADAMS_PORTRAIT_URL, ADAMS_MOUTH_OPEN_URL, ADAMS_EYES_CLOSED_URL];
     let pending = 0;
     sources.forEach((source) => {
       if (!source) return;
@@ -122,8 +119,8 @@ function AdamsStageComponent({ phase, mouthLevelRef, didStream }: AdamsStageProp
       ) : (
         <>
           <div className="adams-breathe absolute inset-0">
-            {/* Standing, holding forth: lips and blinks live on this layer. */}
-            <div className={cn(layerClass, isSpeaking ? "opacity-100" : "opacity-0")}>
+            {/* He stands, holding forth: lips and blinks live on this layer. */}
+            <div className={layerClass}>
               <img
                 src={ADAMS_PORTRAIT_URL}
                 alt=""
@@ -148,27 +145,6 @@ function AdamsStageComponent({ phase, mouthLevelRef, didStream }: AdamsStageProp
                   alt=""
                   className={cn(frameClass, "opacity-0")}
                   draggable={false}
-                />
-              ) : null}
-            </div>
-
-            {/* At his ease: seated by the fire, the frame quietly alive while he listens. */}
-            <div className={cn(layerClass, isSpeaking ? "opacity-0" : "opacity-100")}>
-              <img
-                src={ADAMS_SEATED_URL ?? ADAMS_PORTRAIT_URL}
-                alt=""
-                className={cn(frameClass, isLoaded ? "opacity-100" : "opacity-0")}
-                draggable={false}
-              />
-
-              {!isSpeaking && ADAMS_AMBIENT_VIDEO_URL ? (
-                <video
-                  src={ADAMS_AMBIENT_VIDEO_URL}
-                  autoPlay
-                  muted
-                  loop
-                  playsInline
-                  className={frameClass}
                 />
               ) : null}
             </div>

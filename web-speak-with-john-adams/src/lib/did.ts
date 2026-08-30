@@ -5,7 +5,7 @@
  * here falls back to the plain voice pipeline.
  */
 
-import { ADAMS_PORTRAIT_URL, ADAMS_SEATED_URL, ADAMS_VOICE_ID } from "@/lib/adams";
+import { ADAMS_PORTRAIT_URL, ADAMS_VOICE_ID } from "@/lib/adams";
 import { getSettings } from "@/lib/settings";
 
 const API_BASE = "https://api.d-id.com";
@@ -30,9 +30,24 @@ function friendlyMessage(status: number): string {
   return "The living portrait could not be raised — he will speak in voice alone.";
 }
 
+/**
+ * Builds the Basic-auth credential, accepting the key either as it appears in
+ * D-ID's studio ("…@ak_…") or already base64-encoded.
+ */
+function didCredential(): string {
+  const raw = (import.meta.env.VITE_DID_API_KEY ?? "").trim();
+  if (raw.length === 0) return "";
+  // A studio key contains characters no base64 payload would ("|", "@ak_");
+  // D-ID authenticates it as a username with an empty password.
+  if (raw.includes("|") || raw.includes("@ak_")) {
+    return btoa(`${raw}:`);
+  }
+  return raw;
+}
+
 function authHeaders(): Record<string, string> {
   return {
-    Authorization: `Basic ${(import.meta.env.VITE_DID_API_KEY ?? "").trim()}`,
+    Authorization: `Basic ${didCredential()}`,
     "Content-Type": "application/json",
     accept: "application/json",
   };
@@ -80,7 +95,7 @@ export async function createDidSession(): Promise<DidSession> {
   const response = await fetch(`${API_BASE}/talks/streams`, {
     method: "POST",
     headers: authHeaders(),
-    body: JSON.stringify({ source_url: ADAMS_SEATED_URL ?? ADAMS_PORTRAIT_URL, stream_warmup: true }),
+    body: JSON.stringify({ source_url: ADAMS_PORTRAIT_URL, stream_warmup: true }),
   });
   if (!response.ok) {
     console.error("[adams] D-ID stream creation failed", response.status);
@@ -186,7 +201,7 @@ export async function destroyDidSession(session: DidSession): Promise<void> {
     session.close();
     await fetch(`${API_BASE}/talks/streams/${session.id}`, {
       method: "DELETE",
-      headers: { Authorization: `Basic ${(import.meta.env.VITE_DID_API_KEY ?? "").trim()}` },
+      headers: { Authorization: `Basic ${didCredential()}` },
       body: JSON.stringify({ session_id: session.sessionId }),
     });
   } catch (destroyError) {

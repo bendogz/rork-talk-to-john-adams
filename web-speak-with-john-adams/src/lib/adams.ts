@@ -1,6 +1,6 @@
 import { ADAMS_KNOWLEDGE } from "./adams-knowledge";
 
-/** The full-bleed oil-painting portrait that fills the stage. */
+/** The full-bleed oil-painting portrait that fills the stage — and the face D-ID brings to life. */
 export const ADAMS_PORTRAIT_URL =
   "https://r2-pub.rork.com/projects/jik0ntwupcavtim1umit5/assets/ba4d35d3-ba93-45d3-b9e0-26d770a9947a.png";
 
@@ -11,14 +11,6 @@ export const ADAMS_MOUTH_OPEN_URL: string | null =
 /** Edit of the base portrait with the eyes closed — cross-faded for blinks. */
 export const ADAMS_EYES_CLOSED_URL: string | null =
   "https://r2-pub.rork.com/projects/jik0ntwupcavtim1umit5/assets/b2087bf0-8e5d-42c2-8a90-20dd8a3e627c.png";
-
-/** At his ease: seated by the fire with a tankard of cider, between replies. */
-export const ADAMS_SEATED_URL: string | null =
-  "https://r2-pub.rork.com/projects/jik0ntwupcavtim1umit5/assets/6f8ca4d1-fc42-4e0e-8957-038ab2bb4b1e.png";
-
-/** Living-portrait ambience: he sips his cider while he listens. */
-export const ADAMS_AMBIENT_VIDEO_URL: string | null =
-  "https://r2-pub.rork.com/generated-video/jik0ntwupcavtim1umit5/a33326d4-ff58-4ea1-849d-c7fcac017560.mp4";
 
 /** ElevenLabs voice: mature, crisp, American male — Mr. Adams' speaking voice. */
 export const ADAMS_VOICE_ID = "pqHfZKP75CvOlQylNhV4";
