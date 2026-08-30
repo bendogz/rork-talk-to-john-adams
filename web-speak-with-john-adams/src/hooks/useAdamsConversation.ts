@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
 
-import type { ChatTurn, Exchange } from "@/lib/adams";
+import { ADAMS_GREETING_SPEECH, type ChatTurn, type Exchange } from "@/lib/adams";
 import { ElevenLabsError, speakWithElevenLabs } from "@/lib/elevenlabs";
 import { askAdamsWithOpenAI, OpenAIError, speakAsAdamsWithOpenAI } from "@/lib/openai";
 import { getSettings } from "@/lib/settings";
@@ -23,6 +23,8 @@ interface ConversationState {
 const WORDS_PER_SECOND_FALLBACK = 2.6;
 const CONVERSATION_KEY = "speak-with-adams.conversation.v1";
 const MAX_SAVED_EXCHANGES = 20;
+/** Guards the spoken introduction against StrictMode's double mounting. */
+let hasGreetedThisSession = false;
 
 function createId(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -163,8 +165,9 @@ export function useAdamsConversation({ onAnswerComplete }: UseAdamsConversationO
   }, [clearRevealTimer, releaseAudio]);
 
   // Keep the thread of conversation, so a visitor returning to the page resumes it.
+  // The spoken introduction carries no question, so it is not kept.
   useEffect(() => {
-    saveConversation(state.exchanges);
+    saveConversation(state.exchanges.filter((exchange) => exchange.question.length > 0));
   }, [state.exchanges]);
 
   /** Feeds the mouth level from the actual speech audio, so lips match the voice. */
@@ -321,6 +324,61 @@ export function useAdamsConversation({ onAnswerComplete }: UseAdamsConversationO
     finishSpeaking();
   }, [finishSpeaking]);
 
+  /** Has his reply spoken through the visitor's chosen voice, then played. */
+  const speakAndPlay = useCallback(
+    async (answer: string, signal: AbortSignal): Promise<void> => {
+      try {
+        const voiceSettings = getSettings();
+        // His voice: the visitor's own ElevenLabs account first, their OpenAI
+        // key second, the house post only when neither is entrusted.
+        const url =
+          voiceSettings.elevenlabsKey && voiceSettings.ttsProvider === "elevenlabs"
+            ? await speakWithElevenLabs(answer, { signal })
+            : voiceSettings.openaiKey && voiceSettings.ttsProvider === "openai"
+              ? await speakAsAdamsWithOpenAI(answer, signal)
+              : await speakAsAdams(answer, signal);
+        if (signal.aborted) {
+          URL.revokeObjectURL(url);
+          return;
+        }
+        await playAudio(url, answer);
+      } catch (speechError) {
+        if (signal.aborted) return;
+        console.error("[adams] could not speak the reply", speechError);
+        startReveal(answer, 0);
+        startSimulatedMouth();
+        window.setTimeout(() => {
+          finishSpeaking();
+          onAnswerCompleteRef.current?.();
+        }, Math.max(2600, answer.split(/\s+/).length * 380));
+      }
+    },
+    [finishSpeaking, playAudio, startReveal, startSimulatedMouth],
+  );
+
+  // A first visit earns a spoken introduction: who he is, and a curiosity.
+  useEffect(() => {
+    if (hasGreetedThisSession) return;
+    hasGreetedThisSession = true;
+    if (restoredExchanges.length > 0) return;
+
+    const greeting: Exchange = { id: createId(), question: "", answer: ADAMS_GREETING_SPEECH };
+    pendingAnswerRef.current = greeting.answer;
+    exchangesRef.current = [greeting];
+    const controller = new AbortController();
+    abortRef.current = controller;
+    setState((prev) => ({
+      ...prev,
+      phase: "speaking",
+      exchanges: [greeting],
+      viewIndex: 0,
+      revealedAnswer: "",
+      error: null,
+      needsPlaybackTap: false,
+    }));
+    void speakAndPlay(greeting.answer, controller.signal);
+  }, [restoredExchanges, speakAndPlay]);
+
   const ask = useCallback(
     async (rawQuestion: string): Promise<void> => {
       const question = rawQuestion.trim();
@@ -343,10 +401,13 @@ export function useAdamsConversation({ onAnswerComplete }: UseAdamsConversationO
       }));
 
       try {
-        const history: ChatTurn[] = exchangesRef.current.flatMap((exchange) => [
-          { role: "user" as const, content: exchange.question },
-          { role: "assistant" as const, content: exchange.answer },
-        ]);
+        // The greeting carries no question, so it is not offered as context.
+        const history: ChatTurn[] = exchangesRef.current
+          .filter((exchange) => exchange.question.length > 0)
+          .flatMap((exchange) => [
+            { role: "user" as const, content: exchange.question },
+            { role: "assistant" as const, content: exchange.answer },
+          ]);
 
         // His mind: the visitor's own OpenAI key when entrusted, the house post otherwise.
         const askMind = getSettings().openaiKey ? askAdamsWithOpenAI : askAdams;
@@ -370,31 +431,7 @@ export function useAdamsConversation({ onAnswerComplete }: UseAdamsConversationO
           };
         });
 
-        try {
-          const voiceSettings = getSettings();
-          // His voice: the visitor's own ElevenLabs account first, their OpenAI
-          // key second, the house post only when neither is entrusted.
-          const url =
-            voiceSettings.elevenlabsKey && voiceSettings.ttsProvider === "elevenlabs"
-              ? await speakWithElevenLabs(answer, { signal: controller.signal })
-              : voiceSettings.openaiKey && voiceSettings.ttsProvider === "openai"
-                ? await speakAsAdamsWithOpenAI(answer, controller.signal)
-                : await speakAsAdams(answer, controller.signal);
-          if (controller.signal.aborted) {
-            URL.revokeObjectURL(url);
-            return;
-          }
-          await playAudio(url, answer);
-        } catch (speechError) {
-          if (controller.signal.aborted) return;
-          console.error("[adams] could not speak the reply", speechError);
-          startReveal(answer, 0);
-          startSimulatedMouth();
-          window.setTimeout(() => {
-            finishSpeaking();
-            onAnswerCompleteRef.current?.();
-          }, Math.max(2600, answer.split(/\s+/).length * 380));
-        }
+        await speakAndPlay(answer, controller.signal);
       } catch (error) {
         if (controller.signal.aborted) return;
         const message =
@@ -409,7 +446,7 @@ export function useAdamsConversation({ onAnswerComplete }: UseAdamsConversationO
         }));
       }
     },
-    [clearRevealTimer, finishSpeaking, playAudio, releaseAudio, startReveal, startSimulatedMouth],
+    [clearRevealTimer, releaseAudio, speakAndPlay],
   );
 
   const showPrevious = useCallback((): void => {

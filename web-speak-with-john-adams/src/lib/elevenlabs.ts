@@ -70,7 +70,7 @@ export async function speakWithElevenLabs(
   const voiceId = options.voiceId || settings.elevenlabsVoiceId || ADAMS_VOICE_ID;
 
   const response = await fetch(
-    `${API_BASE}/text-to-speech/${voiceId}?output_format=${OUTPUT_FORMAT}`,
+    `${API_BASE}/text-to-speech/${voiceId}?output_format=${OUTPUT_FORMAT}&optimize_streaming_latency=3`,
     {
       method: "POST",
       headers: { "xi-api-key": apiKey, "Content-Type": "application/json" },

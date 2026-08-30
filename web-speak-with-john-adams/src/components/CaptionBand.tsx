@@ -60,7 +60,9 @@ export function CaptionBand({
           <NavArrow side="right" label="Later reply" onClick={onNext} />
         ) : null}
 
-        <p className="sr-only">You asked: {exchange.question}</p>
+        {exchange.question.length > 0 ? (
+          <p className="sr-only">You asked: {exchange.question}</p>
+        ) : null}
 
         <div
           ref={scrollRef}

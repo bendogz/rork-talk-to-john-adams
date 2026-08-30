@@ -1,31 +1,37 @@
 import { memo, useEffect, useRef, useState, type MutableRefObject } from "react";
 
+import type { StagePhase } from "@/hooks/useAdamsConversation";
 import {
+  ADAMS_AMBIENT_VIDEO_URL,
   ADAMS_EYES_CLOSED_URL,
   ADAMS_MOUTH_OPEN_URL,
   ADAMS_PORTRAIT_URL,
+  ADAMS_SEATED_URL,
 } from "@/lib/adams";
 import { cn } from "@/lib/utils";
 
 interface AdamsStageProps {
-  /** Deepens the vignette while Mr. Adams holds forth. */
-  isSpeaking: boolean;
+  /** The scene's moment: he stands to hold forth, and sits at his ease otherwise. */
+  phase: StagePhase;
   /** Live mouth-open level (0..1) sampled from his voice. */
   mouthLevelRef: MutableRefObject<number>;
 }
 
 /**
- * The full-bleed candlelit scene: Adams standing, facing the viewer, alive —
- * he breathes, blinks, and his mouth moves in time with his spoken answers.
+ * The full-bleed candlelit scene, alive in its frame: while he holds forth,
+ * Adams stands — breathing, blinking, his lips moving with his voice — and
+ * between replies the scene eases into him seated by the fire, cider in hand,
+ * an ambience of gentle motion playing while he listens.
  */
-function AdamsStageComponent({ isSpeaking, mouthLevelRef }: AdamsStageProps) {
+function AdamsStageComponent({ phase, mouthLevelRef }: AdamsStageProps) {
+  const isSpeaking = phase === "speaking";
   const [isLoaded, setIsLoaded] = useState<boolean>(false);
   const mouthImgRef = useRef<HTMLImageElement | null>(null);
   const eyesImgRef = useRef<HTMLImageElement | null>(null);
 
   // Preload the face variants so the first cross-fade does not pop.
   useEffect(() => {
-    const sources = [ADAMS_PORTRAIT_URL, ADAMS_MOUTH_OPEN_URL, ADAMS_EYES_CLOSED_URL];
+    const sources = [ADAMS_PORTRAIT_URL, ADAMS_MOUTH_OPEN_URL, ADAMS_EYES_CLOSED_URL, ADAMS_SEATED_URL];
     let pending = 0;
     sources.forEach((source) => {
       if (!source) return;
@@ -89,41 +95,62 @@ function AdamsStageComponent({ isSpeaking, mouthLevelRef }: AdamsStageProps) {
   }, []);
 
   const frameClass =
-    "absolute left-0 h-[110%] w-full -translate-y-[4%] object-cover object-[50%_8%] transition-opacity duration-[1600ms] ease-out";
+    "absolute left-0 h-[110%] w-full -translate-y-[4%] object-cover object-[50%_8%]";
+  const layerClass = "absolute inset-0 transition-opacity duration-[1400ms] ease-in-out";
 
   return (
     <div className="pointer-events-none absolute inset-0 overflow-hidden bg-stage" aria-hidden="true">
       <div className="adams-breathe absolute inset-0">
-        <img
-          src={ADAMS_PORTRAIT_URL}
-          alt=""
-          className={cn(
-            frameClass,
-            "top-[-5%]",
-            isLoaded ? "opacity-100" : "opacity-0",
-          )}
-          draggable={false}
-        />
-
-        {ADAMS_MOUTH_OPEN_URL ? (
+        {/* Standing, holding forth: lips and blinks live on this layer. */}
+        <div className={cn(layerClass, isSpeaking ? "opacity-100" : "opacity-0")}>
           <img
-            ref={mouthImgRef}
-            src={ADAMS_MOUTH_OPEN_URL}
+            src={ADAMS_PORTRAIT_URL}
             alt=""
-            className={cn(frameClass, "top-[-5%] opacity-0")}
+            className={cn(frameClass, isLoaded ? "opacity-100" : "opacity-0")}
             draggable={false}
           />
-        ) : null}
 
-        {ADAMS_EYES_CLOSED_URL ? (
+          {ADAMS_MOUTH_OPEN_URL ? (
+            <img
+              ref={mouthImgRef}
+              src={ADAMS_MOUTH_OPEN_URL}
+              alt=""
+              className={cn(frameClass, "opacity-0")}
+              draggable={false}
+            />
+          ) : null}
+
+          {ADAMS_EYES_CLOSED_URL ? (
+            <img
+              ref={eyesImgRef}
+              src={ADAMS_EYES_CLOSED_URL}
+              alt=""
+              className={cn(frameClass, "opacity-0")}
+              draggable={false}
+            />
+          ) : null}
+        </div>
+
+        {/* At his ease: seated by the fire, the frame quietly alive while he listens. */}
+        <div className={cn(layerClass, isSpeaking ? "opacity-0" : "opacity-100")}>
           <img
-            ref={eyesImgRef}
-            src={ADAMS_EYES_CLOSED_URL}
+            src={ADAMS_SEATED_URL ?? ADAMS_PORTRAIT_URL}
             alt=""
-            className={cn(frameClass, "top-[-5%] opacity-0")}
+            className={cn(frameClass, isLoaded ? "opacity-100" : "opacity-0")}
             draggable={false}
           />
-        ) : null}
+
+          {!isSpeaking && ADAMS_AMBIENT_VIDEO_URL ? (
+            <video
+              src={ADAMS_AMBIENT_VIDEO_URL}
+              autoPlay
+              muted
+              loop
+              playsInline
+              className={frameClass}
+            />
+          ) : null}
+        </div>
       </div>
 
       {/* Candle glow at the left of the scene */}

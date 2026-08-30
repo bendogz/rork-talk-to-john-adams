@@ -12,6 +12,14 @@ export const ADAMS_MOUTH_OPEN_URL: string | null =
 export const ADAMS_EYES_CLOSED_URL: string | null =
   "https://r2-pub.rork.com/projects/jik0ntwupcavtim1umit5/assets/b2087bf0-8e5d-42c2-8a90-20dd8a3e627c.png";
 
+/** At his ease: seated by the fire with a tankard of cider, between replies. */
+export const ADAMS_SEATED_URL: string | null =
+  "https://r2-pub.rork.com/projects/jik0ntwupcavtim1umit5/assets/6f8ca4d1-fc42-4e0e-8957-038ab2bb4b1e.png";
+
+/** Living-portrait ambience: he sips his cider while he listens. */
+export const ADAMS_AMBIENT_VIDEO_URL: string | null =
+  "https://r2-pub.rork.com/generated-video/jik0ntwupcavtim1umit5/a33326d4-ff58-4ea1-849d-c7fcac017560.mp4";
+
 /** ElevenLabs voice: mature, crisp, American male — Mr. Adams' speaking voice. */
 export const ADAMS_VOICE_ID = "pqHfZKP75CvOlQylNhV4";
 
@@ -23,6 +31,12 @@ export const GREETING_LINES: readonly string[] = [
   "Good day. John Adams, of Braintree, Massachusetts, at your service.",
   INVITATION,
 ];
+
+/**
+ * His spoken self-introduction, given the first time a visitor arrives: who he
+ * is, a sketch of the man, and a curiosity to draw them in.
+ */
+export const ADAMS_GREETING_SPEECH = `Good day to you, friend. John Adams, of Braintree, in the Massachusetts Bay — lawyer by trade, farmer by affection, and husband to Abigail, the wisest soul in America. I had the honour to serve as the first Vice President of these United States, and the second to hold the office of President, after General Washington, who was, I confess, rather better at silence than I ever was. I am blunt by reputation and honest by constitution; I have made more enemies telling the truth than most men make telling lies. And a curiosity for you: Mr. Jefferson and I — rivals, then friends, fifty years of letters between us — both died upon the very same day. The fourth of July, 1826, the fiftieth birthday of the Declaration we wrote together. His last words were of me; mine, they say, were of him. But enough of the departed. Sit, speak. Ask me of independence, of government, of liberty, or of the price I paid for them — I am listening.`;
 
 /**
  * The permanent character instructions. Every answer draws on the knowledge

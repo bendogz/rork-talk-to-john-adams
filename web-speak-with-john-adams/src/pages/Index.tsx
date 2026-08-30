@@ -88,12 +88,18 @@ const Index = () => {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [handleMicPress, phase, stopSpeaking]);
 
+  // An ear always open: while he holds forth, a sustained voice yields the floor.
+  useEffect(() => {
+    if (phase === "speaking") void voice.startAmbient(stopSpeaking);
+    else voice.stopAmbient();
+  }, [phase, stopSpeaking, voice]);
+
   const notice = error ?? voice.error;
   const showGreeting = currentExchange === null && phase !== "considering";
 
   return (
     <main className="relative flex h-[100dvh] w-full flex-col overflow-hidden bg-stage">
-      <AdamsStage isSpeaking={phase === "speaking"} mouthLevelRef={mouthLevelRef} />
+      <AdamsStage phase={phase} mouthLevelRef={mouthLevelRef} />
 
       <StageHeader phase={phase} />
 
