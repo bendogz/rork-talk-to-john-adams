@@ -1,0 +1,185 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Design system for "Speak with John Adams".
+   Founding parchment: cream canvas, ink brown, wax red, aged gold.
+   All colors MUST be HSL. */
+
+@layer base {
+  :root {
+    /* Parchment surfaces */
+    --background: 41 49% 92%;
+    --foreground: 26 41% 12%;
+
+    --card: 41 46% 87%;
+    --card-foreground: 26 41% 12%;
+
+    --popover: 41 46% 87%;
+    --popover-foreground: 26 41% 12%;
+
+    /* Wax red — seals, send button, primary action */
+    --primary: 11 68% 33%;
+    --primary-foreground: 41 49% 94%;
+
+    /* Aged gold — rules, microphone, interactive accents */
+    --secondary: 40 60% 45%;
+    --secondary-foreground: 26 41% 12%;
+
+    --muted: 41 30% 80%;
+    --muted-foreground: 26 20% 34%;
+
+    --accent: 40 60% 45%;
+    --accent-foreground: 26 41% 12%;
+
+    --destructive: 11 68% 33%;
+    --destructive-foreground: 41 49% 94%;
+
+    --border: 40 32% 72%;
+    --input: 40 32% 72%;
+    --ring: 40 60% 45%;
+
+    --radius: 0.5rem;
+
+    /* Scene tokens */
+    --stage: 34 30% 6%;
+    --ink: 26 41% 12%;
+    --gold: 40 60% 45%;
+    --gold-bright: 42 68% 62%;
+    --wax: 11 68% 33%;
+    --archival: 215 51% 25%;
+    --candle: 38 78% 66%;
+
+    --sidebar-background: 41 46% 87%;
+    --sidebar-foreground: 26 41% 12%;
+    --sidebar-primary: 11 68% 33%;
+    --sidebar-primary-foreground: 41 49% 94%;
+    --sidebar-accent: 40 60% 45%;
+    --sidebar-accent-foreground: 26 41% 12%;
+    --sidebar-border: 40 32% 72%;
+    --sidebar-ring: 40 60% 45%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    @apply bg-stage text-foreground;
+    font-family: "Karla", ui-sans-serif, system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    overscroll-behavior: none;
+  }
+
+  ::selection {
+    background: hsl(var(--gold) / 0.35);
+    color: hsl(var(--foreground));
+  }
+
+  /* Visible, period-appropriate focus ring everywhere */
+  :focus-visible {
+    outline: 2px solid hsl(var(--gold-bright));
+    outline-offset: 2px;
+  }
+}
+
+@layer components {
+  /* Warm paper grain laid over parchment surfaces */
+  .paper-grain {
+    position: relative;
+    isolation: isolate;
+  }
+
+  .paper-grain::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+    opacity: 0.5;
+    mix-blend-mode: multiply;
+    border-radius: inherit;
+    background-image:
+      radial-gradient(hsl(26 30% 40% / 0.09) 1px, transparent 1px),
+      radial-gradient(hsl(26 30% 40% / 0.06) 1px, transparent 1px);
+    background-size: 7px 7px, 11px 11px;
+    background-position: 0 0, 3px 4px;
+  }
+
+  /* Thin engraved rule with a centered gold lozenge */
+  .rule-flourish {
+    position: relative;
+    height: 1px;
+    background: linear-gradient(
+      to right,
+      transparent,
+      hsl(var(--gold) / 0.65) 18%,
+      hsl(var(--gold) / 0.65) 82%,
+      transparent
+    );
+  }
+}
+
+@layer utilities {
+  .font-display {
+    font-family: "IM Fell English SC", "EB Garamond", Georgia, serif;
+  }
+
+  .font-serif-voice {
+    font-family: "EB Garamond", Georgia, "Times New Roman", serif;
+  }
+
+  .text-engraved {
+    text-shadow: 0 1px 0 hsl(26 40% 4% / 0.55), 0 0 26px hsl(38 70% 50% / 0.18);
+  }
+
+  .safe-bottom {
+    padding-bottom: max(1rem, env(safe-area-inset-bottom));
+  }
+
+  .no-scrollbar {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+@keyframes adams-breathe {
+  0%,
+  100% {
+    transform: scale(1) translateY(0);
+  }
+  50% {
+    transform: scale(1.014) translateY(-0.35%);
+  }
+}
+
+@layer utilities {
+  /* Slow, standing-breath motion for the portrait */
+  .adams-breathe {
+    animation: adams-breathe 7s ease-in-out infinite;
+    will-change: transform;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}

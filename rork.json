@@ -1,0 +1,10 @@
+{
+  "apps": [
+    {
+      "name": "Speak with John Adams",
+      "path": "web-speak-with-john-adams",
+      "framework": "web"
+    }
+  ],
+  "$schema": "https://rork.com/schema/rork.json"
+}
