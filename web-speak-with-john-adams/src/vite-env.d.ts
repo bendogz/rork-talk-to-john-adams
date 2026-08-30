@@ -8,6 +8,8 @@ interface ImportMetaEnv {
   readonly VITE_ELEVENLABS_API_KEY?: string;
   /** Built into the app: OpenAI account behind his mind and hearing. */
   readonly VITE_OPENAI_API_KEY?: string;
+  /** Built into the app: D-ID account that renders the living portrait. */
+  readonly VITE_DID_API_KEY?: string;
 }
 
 interface ImportMeta {

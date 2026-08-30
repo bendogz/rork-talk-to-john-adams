@@ -19,6 +19,7 @@ const Index = () => {
 
   const {
     phase,
+    didStream,
     exchanges,
     currentExchange,
     viewIndex,
@@ -99,7 +100,7 @@ const Index = () => {
 
   return (
     <main className="relative flex h-[100dvh] w-full flex-col overflow-hidden bg-stage">
-      <AdamsStage phase={phase} mouthLevelRef={mouthLevelRef} />
+      <AdamsStage phase={phase} mouthLevelRef={mouthLevelRef} didStream={didStream} />
 
       <StageHeader phase={phase} />
 

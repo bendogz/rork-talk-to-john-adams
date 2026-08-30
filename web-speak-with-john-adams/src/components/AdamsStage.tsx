@@ -15,6 +15,8 @@ interface AdamsStageProps {
   phase: StagePhase;
   /** Live mouth-open level (0..1) sampled from his voice. */
   mouthLevelRef: MutableRefObject<number>;
+  /** When the living portrait is streaming, it fills the frame on this layer. */
+  didStream?: MediaStream | null;
 }
 
 /**
@@ -23,11 +25,20 @@ interface AdamsStageProps {
  * between replies the scene eases into him seated by the fire, cider in hand,
  * an ambience of gentle motion playing while he listens.
  */
-function AdamsStageComponent({ phase, mouthLevelRef }: AdamsStageProps) {
+function AdamsStageComponent({ phase, mouthLevelRef, didStream }: AdamsStageProps) {
   const isSpeaking = phase === "speaking";
   const [isLoaded, setIsLoaded] = useState<boolean>(false);
   const mouthImgRef = useRef<HTMLImageElement | null>(null);
   const eyesImgRef = useRef<HTMLImageElement | null>(null);
+  const didVideoRef = useRef<HTMLVideoElement | null>(null);
+
+  // Bind the living portrait's feed to its element whenever it arrives.
+  useEffect(() => {
+    const el = didVideoRef.current;
+    if (!el || !didStream) return;
+    if (el.srcObject !== didStream) el.srcObject = didStream;
+    void el.play().catch(() => undefined);
+  }, [didStream]);
 
   // Preload the face variants so the first cross-fade does not pop.
   useEffect(() => {
@@ -152,6 +163,16 @@ function AdamsStageComponent({ phase, mouthLevelRef }: AdamsStageProps) {
           ) : null}
         </div>
       </div>
+
+      {/* The living portrait, when streaming: real lips, real motion. */}
+      {didStream ? (
+        <video
+          ref={didVideoRef}
+          autoPlay
+          playsInline
+          className="absolute inset-0 h-full w-full object-cover"
+        />
+      ) : null}
 
       {/* Candle glow at the left of the scene */}
       <div className="animate-candle-flicker absolute left-[14%] top-[38%] h-[38vh] w-[38vh] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[radial-gradient(circle,hsl(38_85%_62%/0.24),transparent_65%)]" />
