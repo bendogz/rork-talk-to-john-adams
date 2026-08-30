@@ -3,7 +3,7 @@
   "consent_text": "I, [user name] confirm that I have all the necessary rights or consents to use this footage and voice recording for creating an Avatar from my 'User Submission' all in accordance with the Terms of Use. This is my dynamic passcode frog, bush, haze",
   "talk_id": "tlk_mgc27sJdljc4_m1MfSx-x",
   "consent_status": "done",
-  "avatar_id": "avt_Xn7NRZTSbwUG_VmYtlYbf",
+  "avatar_id": "avt_rbqBKyCkk1VA-iXmtMUxY",
   "v2_agent_id": null,
   "v2_client_key": null,
   "talk_status": "done",
@@ -19,5 +19,36 @@
     "status": "done",
     "name": "John Adams"
   },
-  "avatar_status": "error"
+  "avatar_status": "done",
+  "avatar": {
+    "object": "scene_avatar",
+    "owner_id": "google-oauth2|116081849206873258456",
+    "id": "avt_rbqBKyCkk1VA-iXmtMUxY",
+    "status": "done",
+    "created_at": "2026-08-30T23:46:22.879Z",
+    "created_by": "google-oauth2|116081849206873258456",
+    "modified_at": "2026-08-30T23:49:28.993Z",
+    "started_at": "2026-08-30T23:46:37.929",
+    "completed_at": "2026-08-30T23:49:26.555",
+    "name": "John Adams",
+    "thumbnail_url": "https://scenes-avatars.d-id.com/google-oauth2|116081849206873258456/avt_rbqBKyCkk1VA-iXmtMUxY/thumbnail.png",
+    "talking_preview_url": "https://scenes-avatars.d-id.com/google-oauth2|116081849206873258456/avt_rbqBKyCkk1VA-iXmtMUxY/talking-preview.mp4",
+    "image_url": "https://scenes-avatars.d-id.com/google-oauth2|116081849206873258456/avt_rbqBKyCkk1VA-iXmtMUxY/image.png",
+    "source_url": "https://scenes-avatars.d-id.com/google-oauth2|116081849206873258456/avt_rbqBKyCkk1VA-iXmtMUxY/9runf8.mp4",
+    "consent_id": "cst_M0QB8zawW9AXJRTrsMO9B",
+    "persist": true,
+    "creation_notes": {
+      "is_clone_voice_failed": true
+    },
+    "preview_url": ""
+  },
+  "v2_agent": {
+    "kind": "PermissionError",
+    "description": "user has no permission for expressives"
+  },
+  "v2_agent_status": "unknown",
+  "v2_agent_latest": {
+    "kind": "BadRequestError",
+    "description": "Agent not found"
+  }
 }

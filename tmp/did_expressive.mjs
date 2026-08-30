@@ -18,7 +18,7 @@ const DID_SECRET_ID = "QSLOvS6kzsKEIpx07fn-F";
 const PORTRAIT_URL =
   "https://r2-pub.rork.com/projects/jik0ntwupcavtim1umit5/assets/ba4d35d3-ba93-45d3-b9e0-26d770a9947a.png";
 const SOURCE_VIDEO_URL =
-  "https://r2-pub.rork.com/generated-video/jik0ntwupcavtim1umit5/b2200fa9-32e7-488e-b0e3-57cea7ba689a.mp4";
+  "https://litter.catbox.moe/9runf8.mp4"; // stitched 72s training reel (tmpfiles 1h expiry)
 const STATE_PATH = "tmp/did_expressive_state.json";
 const base = "https://api.d-id.com";
 const headers = { Authorization: `Basic ${DID_KEY}`, "Content-Type": "application/json" };
