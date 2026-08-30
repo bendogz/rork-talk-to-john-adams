@@ -29,6 +29,7 @@ export class ViggleError extends Error {
 function friendlyMessage(status: number): string {
   if (status === 401) return "The motion studio refuses its key. Pray check the Viggle account.";
   if (status === 402) return "The motion studio's credits have run dry. Visit portal.viggle.ai to set it right.";
+  if (status === 409) return "He is still rehearsing that motion — one moment, then try again.";
   if (status === 429) return "The motion studio is much in demand this moment. Wait briefly.";
   return "The motion studio could not be reached just now.";
 }
@@ -93,11 +94,10 @@ async function waitForCharacter(id: string): Promise<void> {
   throw new ViggleError("The portrait is long in preparation. Try again presently.", 504);
 }
 
-/** A motion he may learn: Viggle's own repertoire, or one this account keeps. */
+/** A motion he may learn: one from this account's repertoire. */
 export interface MotionOption {
   id: string;
   name: string;
-  kind: "template" | "mine";
 }
 
 interface RawMotion {
@@ -112,28 +112,29 @@ interface RawMotion {
 
 /** The repertoire of motions ready to be rendered against his portrait. */
 export async function fetchMotionOptions(): Promise<MotionOption[]> {
-  const collect = (items: RawMotion[], kind: MotionOption["kind"]): MotionOption[] =>
-    items
-      .map((item) => ({ id: item.id ?? item.motion_id ?? "", name: item.name ?? item.title ?? "", kind }))
-      .filter((option) => option.id.length > 0 && option.name.length > 0);
-
-  try {
-    const data = await viggleFetch<{ data?: RawMotion[] } | RawMotion[]>("/motion-templates");
-    const items = Array.isArray(data) ? data : (data.data ?? []);
-    const templates = collect(items, "template");
-    if (templates.length > 0) return templates;
-  } catch (templateError) {
-    console.warn("[adams] Viggle motion templates unavailable; trying own motions", templateError);
-  }
-
   const data = await viggleFetch<{ data?: RawMotion[] } | RawMotion[]>("/motions");
   const items = Array.isArray(data) ? data : (data.data ?? []);
-  return collect(
-    items.filter(
-      (item) => item.capabilities?.includes("video_render") === true || item.type?.includes("render") === true,
-    ),
-    "mine",
-  );
+  // Only motions that can be rendered as film — a bare 3D (glb) motion cannot.
+  return items
+    .map((item) => ({ id: item.id ?? item.motion_id ?? "", name: item.name ?? item.title ?? "" }))
+    .filter((option, index) => {
+      if (option.id.length === 0 || option.name.length === 0) return false;
+      const capabilities = items[index]?.capabilities ?? [];
+      return capabilities.length === 0 || capabilities.some((capability) => /render/i.test(capability));
+    });
+}
+
+/**
+ * Teaches him one of Viggle's own templates — the ID is copied from the
+ * viggle.ai gallery beside each template's title. The motion joins the
+ * repertoire once the studio has studied it.
+ */
+export async function importMotionTemplate(templateId: string, name = ""): Promise<void> {
+  await viggleFetch<RawMotion>("/motions/import", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ template_id: templateId, name }),
+  });
 }
 
 /**

@@ -26,6 +26,7 @@ import {
 } from "@/lib/settings";
 import {
   fetchMotionOptions,
+  importMotionTemplate,
   isViggleEnabled,
   removeMotionClip,
   setActiveMotionClip,
@@ -73,6 +74,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const [motionNote, setMotionNote] = useState<string | null>(null);
   const [customMotionUrl, setCustomMotionUrl] = useState<string>("");
   const [customMotionName, setCustomMotionName] = useState<string>("");
+  const [templateId, setTemplateId] = useState<string>("");
 
   const hasOpenaiKey = settings.openaiKey.length > 0;
   const hasElevenlabsKey = settings.elevenlabsKey.length > 0;
@@ -179,7 +181,6 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     const option: MotionOption = {
       id: "",
       name: customMotionName.trim().length > 0 ? customMotionName.trim() : "A gesture of his own",
-      kind: "mine",
     };
     setMotionBusy("custom");
     setMotionNote(null);
@@ -191,6 +192,28 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
       })
       .catch((error: unknown) => {
         setMotionNote(error instanceof ViggleError ? error.message : "The motion studio refused the request.");
+      })
+      .finally(() => setMotionBusy(null));
+  };
+
+  const handleImportTemplate = (): void => {
+    if (motionBusy !== null) return;
+    const id = templateId.trim();
+    if (id.length === 0) {
+      setMotionNote("Copy a template ID from viggle.ai first — the icon beside each template's title.");
+      return;
+    }
+    setMotionBusy("import");
+    setMotionNote(null);
+    importMotionTemplate(id)
+      .then(() => fetchMotionOptions())
+      .then((options) => {
+        setMotionOptions(options);
+        setTemplateId("");
+        setMotionNote("He is studying the template — it will join the repertoire in a few minutes.");
+      })
+      .catch((error: unknown) => {
+        setMotionNote(error instanceof ViggleError ? error.message : "That template could not be imported.");
       })
       .finally(() => setMotionBusy(null));
   };
@@ -441,6 +464,39 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                       <Wand2 className="mr-1 h-3.5 w-3.5" aria-hidden="true" />
                     )}
                     Set him in motion
+                  </Button>
+                </div>
+
+                <div className="flex flex-col gap-1.5">
+                  <Label
+                    htmlFor="motion-template"
+                    className="font-sans text-[0.72rem] uppercase tracking-widest text-[hsl(26_25%_32%)]"
+                  >
+                    Or import one of Viggle's own templates
+                  </Label>
+                  <Input
+                    id="motion-template"
+                    type="text"
+                    autoComplete="off"
+                    spellCheck={false}
+                    placeholder="Template ID copied from viggle.ai"
+                    value={templateId}
+                    onChange={(event) => setTemplateId(event.target.value)}
+                    className="text-[0.85rem]"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={motionBusy !== null || templateId.trim().length === 0}
+                    onClick={handleImportTemplate}
+                    className="min-h-[44px] border-[hsl(40_35%_65%)] bg-[hsl(41_40%_84%/0.6)] text-ink hover:bg-[hsl(41_40%_78%)]"
+                  >
+                    {motionBusy === "import" ? (
+                      <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                    ) : (
+                      <Wand2 className="mr-1 h-3.5 w-3.5" aria-hidden="true" />
+                    )}
+                    Teach him this motion
                   </Button>
                 </div>
 
