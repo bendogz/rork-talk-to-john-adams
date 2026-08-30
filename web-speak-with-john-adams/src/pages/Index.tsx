@@ -8,12 +8,9 @@ import { StageHeader } from "@/components/StageHeader";
 import { VoiceOrb } from "@/components/VoiceOrb";
 import { useAdamsConversation } from "@/hooks/useAdamsConversation";
 import { useVoiceInput } from "@/hooks/useVoiceInput";
-import { motionsForPhase } from "@/lib/motions";
 
 const Index = () => {
   const [lastQuestion, setLastQuestion] = useState<string>("");
-  /** Which of his known motions stands upon the stage just now. */
-  const [motionIndex, setMotionIndex] = useState<number>(0);
   /** Set once `voice` exists below; keeps the mic hook's callback stable. */
   const askRef = useRef<(question: string) => void>(() => undefined);
   const voiceRef = useRef<ReturnType<typeof useVoiceInput> | null>(null);
@@ -44,23 +41,6 @@ const Index = () => {
   });
 
   const busy = phase === "considering";
-
-  // His repertoire is known by heart: while he considers, a pondering posture;
-  // while he listens or waits, the whole range — pacing, sitting, gesturing.
-  const motionPool = motionsForPhase(phase === "considering" ? "considering" : "other");
-
-  // A change of moment — a question posed, an answer ended — finds him shifting.
-  useEffect(() => {
-    setMotionIndex((index) => index + 1);
-  }, [motionPool.length, phase]);
-
-  // And every half minute he trades one posture for another of his own accord.
-  useEffect(() => {
-    const timer = window.setInterval(() => setMotionIndex((index) => index + 1), 32000);
-    return () => window.clearInterval(timer);
-  }, []);
-
-  const motionClipUrl = motionPool.length > 0 ? motionPool[motionIndex % motionPool.length].url : null;
 
   const handleAsk = useCallback((question: string): void => {
     askRef.current(question);
@@ -120,12 +100,7 @@ const Index = () => {
 
   return (
     <main className="relative flex h-[100dvh] w-full flex-col overflow-hidden bg-stage">
-      <AdamsStage
-        phase={phase}
-        mouthLevelRef={mouthLevelRef}
-        didStream={didStream}
-        motionClipUrl={motionClipUrl}
-      />
+      <AdamsStage phase={phase} mouthLevelRef={mouthLevelRef} didStream={didStream} />
 
       <StageHeader phase={phase} />
 

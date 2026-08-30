@@ -175,7 +175,8 @@ export async function speakOnDidSession(session: DidSession, text: string): Prom
         input: text,
         provider: {
           type: "elevenlabs",
-          voice_id: getSettings().elevenlabsVoiceId || ADAMS_VOICE_ID,
+          // His standing voice, always — pinned so it can never drift.
+          voice_id: ADAMS_VOICE_ID,
           // NB: D-ID reads `voice_config`, not `elevenlabs_voice_settings`.
           voice_config: {
             stability: 0.55,

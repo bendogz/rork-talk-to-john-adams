@@ -13,8 +13,6 @@ export type VoiceProvider = "elevenlabs" | "openai";
 export interface AdamsSettings {
   openaiKey: string;
   elevenlabsKey: string;
-  /** Chosen from the account's own voices; empty falls back to his default. */
-  elevenlabsVoiceId: string;
   ttsProvider: VoiceProvider;
 }
 
@@ -30,7 +28,6 @@ export const hasBuiltInElevenLabsKey: boolean = ENV_ELEVENLABS_KEY.length > 0;
 const EMPTY_SETTINGS: AdamsSettings = {
   openaiKey: "",
   elevenlabsKey: "",
-  elevenlabsVoiceId: "",
   ttsProvider: "elevenlabs",
 };
 
@@ -49,7 +46,6 @@ function read(): AdamsSettings {
     return {
       openaiKey: typeof parsed.openaiKey === "string" ? parsed.openaiKey : "",
       elevenlabsKey: typeof parsed.elevenlabsKey === "string" ? parsed.elevenlabsKey : "",
-      elevenlabsVoiceId: typeof parsed.elevenlabsVoiceId === "string" ? parsed.elevenlabsVoiceId : "",
       ttsProvider: parsed.ttsProvider === "openai" ? "openai" : "elevenlabs",
     };
   } catch (error) {
@@ -81,7 +77,6 @@ export function saveSettings(next: AdamsSettings): void {
   raw = {
     openaiKey: next.openaiKey.trim(),
     elevenlabsKey: next.elevenlabsKey.trim(),
-    elevenlabsVoiceId: next.elevenlabsVoiceId.trim(),
     ttsProvider: next.ttsProvider,
   };
   persist();

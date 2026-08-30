@@ -11,12 +11,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  ElevenLabsError,
-  fetchElevenLabsVoices,
-  speakWithElevenLabs,
-  type ElevenLabsVoice,
-} from "@/lib/elevenlabs";
+import { ElevenLabsError, speakWithElevenLabs } from "@/lib/elevenlabs";
 import {
   hasBuiltInElevenLabsKey,
   hasBuiltInOpenAIKey,
@@ -48,8 +43,6 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const [draftElevenlabsKey, setDraftElevenlabsKey] = useState<string>("");
   const [saved, setSaved] = useState<boolean>(false);
 
-  const [voices, setVoices] = useState<ElevenLabsVoice[]>([]);
-  const [voicesLoading, setVoicesLoading] = useState<boolean>(false);
   const [voicesNote, setVoicesNote] = useState<string | null>(null);
   const [previewLoading, setPreviewLoading] = useState<boolean>(false);
 
@@ -58,26 +51,6 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
 
   const hasOpenaiKey = settings.openaiKey.length > 0;
   const hasElevenlabsKey = settings.elevenlabsKey.length > 0;
-
-  // The account's own voices, ready for choosing whenever a key is entrusted.
-  useEffect(() => {
-    if (!open || !hasElevenlabsKey) return;
-    const controller = new AbortController();
-    setVoicesLoading(true);
-    setVoicesNote(null);
-    fetchElevenLabsVoices(settings.elevenlabsKey, controller.signal)
-      .then((list) => setVoices(list))
-      .catch((error: unknown) => {
-        if (controller.signal.aborted) return;
-        setVoicesNote(
-          error instanceof ElevenLabsError ? error.message : "The voice list could not be fetched.",
-        );
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setVoicesLoading(false);
-      });
-    return () => controller.abort();
-  }, [open, hasElevenlabsKey, settings.elevenlabsKey]);
 
   // A closed office silences any audition still playing.
   useEffect(() => {
@@ -108,10 +81,6 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     updateSettings({ ttsProvider: provider });
   };
 
-  const handleChooseVoice = (voiceId: string): void => {
-    updateSettings({ elevenlabsVoiceId: voiceId });
-  };
-
   const handlePreview = (): void => {
     if (previewLoading) return;
     previewAudioRef.current?.pause();
@@ -120,7 +89,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
       previewUrlRef.current = null;
     }
     setPreviewLoading(true);
-    speakWithElevenLabs(SAMPLE_LINE, { voiceId: settings.elevenlabsVoiceId })
+    speakWithElevenLabs(SAMPLE_LINE)
       .then((url) => {
         previewUrlRef.current = url;
         const audio = new Audio(url);
@@ -168,42 +137,21 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
             />
 
             {hasElevenlabsKey ? (
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="voice-choice" className="font-sans text-[0.72rem] uppercase tracking-widest text-[hsl(26_25%_32%)]">
-                  Voice from your account
-                </Label>
-                <div className="flex gap-2">
-                  <select
-                    id="voice-choice"
-                    value={settings.elevenlabsVoiceId}
-                    onChange={(event) => handleChooseVoice(event.target.value)}
-                    className="min-h-[44px] w-full rounded-[5px] border border-[hsl(40_35%_65%)] bg-[hsl(41_40%_84%/0.6)] px-3 font-sans text-[0.9rem] text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(11_55%_35%)]"
-                  >
-                    {voices.length === 0 ? (
-                      <option value="">{voicesLoading ? "Fetching the voices…" : "His standing voice"}</option>
-                    ) : (
-                      voices.map((voice) => (
-                        <option key={voice.voice_id} value={voice.voice_id}>
-                          {voice.name}
-                        </option>
-                      ))
-                    )}
-                  </select>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={handlePreview}
-                    disabled={previewLoading}
-                    className="min-h-[44px] shrink-0 border-[hsl(40_35%_65%)] bg-[hsl(41_40%_84%/0.6)] px-3 text-ink hover:bg-[hsl(41_40%_78%)]"
-                    aria-label="Hear this voice"
-                  >
-                    {previewLoading ? (
-                      <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-                    ) : (
-                      <Play className="h-4 w-4" aria-hidden="true" />
-                    )}
-                  </Button>
-                </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handlePreview}
+                  disabled={previewLoading}
+                  className="min-h-[40px] shrink-0 border-[hsl(40_35%_65%)] bg-[hsl(41_40%_84%/0.6)] px-3 text-[0.85rem] text-ink hover:bg-[hsl(41_40%_78%)]"
+                >
+                  {previewLoading ? (
+                    <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                  ) : (
+                    <Play className="mr-1 h-3.5 w-3.5" aria-hidden="true" />
+                  )}
+                  Hear his voice
+                </Button>
                 {voicesNote !== null ? (
                   <p className="font-serif-voice text-[0.82rem] italic text-[hsl(11_50%_32%)]">{voicesNote}</p>
                 ) : null}

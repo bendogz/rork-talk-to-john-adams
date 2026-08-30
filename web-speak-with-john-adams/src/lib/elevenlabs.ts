@@ -67,7 +67,7 @@ export async function speakWithElevenLabs(
       401,
     );
   }
-  const voiceId = options.voiceId || settings.elevenlabsVoiceId || ADAMS_VOICE_ID;
+  const voiceId = options.voiceId || ADAMS_VOICE_ID;
 
   const response = await fetch(
     `${API_BASE}/text-to-speech/${voiceId}?output_format=${OUTPUT_FORMAT}&optimize_streaming_latency=2`,
