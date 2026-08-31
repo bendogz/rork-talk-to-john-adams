@@ -34,6 +34,8 @@ export interface AdamsAgentCallbacks {
   onStream: (stream: MediaStream | null) => void;
   /** The agent's reply, as its spoken message lands. */
   onAnswer?: (text: string) => void;
+  /** His stream went quiet — the rendered speech has finished. */
+  onIdle?: () => void;
   /** The connection could not be kept. */
   onFail: (message: string) => void;
 }
@@ -51,7 +53,12 @@ export async function createAdamsAgentSession(callbacks: AdamsAgentCallbacks): P
         callbacks.onStream(stream);
       },
       onVideoStateChange: (state) => {
-        if (state === StreamingState.Stop) callbacks.onStream(null);
+        if (state === StreamingState.Stop) {
+          // Speech done — but the connection lives on, idling on D-ID's rendered
+          // idle video. Dropping the feed here would snap the stage back to the
+          // painted portrait after every answer.
+          callbacks.onIdle?.();
+        }
       },
       onNewMessage: (messages, type) => {
         if (type !== "answer") return;
@@ -60,6 +67,8 @@ export async function createAdamsAgentSession(callbacks: AdamsAgentCallbacks): P
       },
       onConnectionStateChange: (state) => {
         if (state === ConnectionState.Fail || state === ConnectionState.Closed) {
+          // A dead connection must hand the stage back to the portrait.
+          callbacks.onStream(null);
           callbacks.onFail(`connection ${state}`);
         }
       },
@@ -70,7 +79,19 @@ export async function createAdamsAgentSession(callbacks: AdamsAgentCallbacks): P
     },
   });
 
-  await manager.connect();
+  try {
+    await manager.connect();
+  } catch (connectError) {
+    // A failed connect still reserved a session on D-ID's side. Without this
+    // teardown the next attempt meets "Max user sessions reached" and every
+    // answer after it falls back to the slow house pipeline.
+    try {
+      await manager.disconnect();
+    } catch {
+      // The session was already gone.
+    }
+    throw connectError;
+  }
   return manager;
 }
 

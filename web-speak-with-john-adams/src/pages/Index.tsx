@@ -14,8 +14,8 @@ const Index = () => {
   /** Set once `voice` exists below; keeps the mic hook's callback stable. */
   const askRef = useRef<(question: string) => void>(() => undefined);
   const voiceRef = useRef<ReturnType<typeof useVoiceInput> | null>(null);
-  /** Auto-listen only once the visitor has spoken at least once this session. */
-  const hasSpokenOnceRef = useRef<boolean>(false);
+  /** Set when an answer ends; the microphone reopens once the ambient ear closes. */
+  const resumeListenRef = useRef<boolean>(false);
 
   const {
     phase,
@@ -36,7 +36,7 @@ const Index = () => {
   } = useAdamsConversation({
     // The back-and-forth: when he finishes, the seal opens to hear the reply.
     onAnswerComplete: () => {
-      if (hasSpokenOnceRef.current) void voiceRef.current?.start();
+      resumeListenRef.current = true;
     },
   });
 
@@ -68,9 +68,34 @@ const Index = () => {
     voiceRef.current = voice;
   }, [voice]);
 
+  // An ear always open: while he holds forth, a sustained voice yields the floor;
+  // when he falls quiet, the microphone reopens of its own accord. The resume
+  // flag is needed because the old listener still holds the ear as he finishes.
   useEffect(() => {
-    if (voice.status === "listening") hasSpokenOnceRef.current = true;
-  }, [voice.status]);
+    if (phase === "speaking") {
+      resumeListenRef.current = false;
+      void voice.startAmbient(stopSpeaking);
+      return;
+    }
+    voice.stopAmbient();
+    if (resumeListenRef.current) {
+      resumeListenRef.current = false;
+      void voice.start();
+    }
+  }, [phase, stopSpeaking, voice]);
+
+  // The ear is always on: the page's first touch or keystroke opens the microphone.
+  useEffect(() => {
+    const openEar = (): void => {
+      if (voiceRef.current?.status === "idle") void voiceRef.current.start();
+    };
+    window.addEventListener("pointerdown", openEar, { once: true });
+    window.addEventListener("keydown", openEar, { once: true });
+    return () => {
+      window.removeEventListener("pointerdown", openEar);
+      window.removeEventListener("keydown", openEar);
+    };
+  }, []);
 
   const handleMicPress = useCallback((): void => {
     if (phase === "speaking") stopSpeaking();
@@ -88,12 +113,6 @@ const Index = () => {
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [handleMicPress, phase, stopSpeaking]);
-
-  // An ear always open: while he holds forth, a sustained voice yields the floor.
-  useEffect(() => {
-    if (phase === "speaking") void voice.startAmbient(stopSpeaking);
-    else voice.stopAmbient();
-  }, [phase, stopSpeaking, voice]);
 
   const notice = error ?? voice.error;
   const showGreeting = currentExchange === null && phase !== "considering";

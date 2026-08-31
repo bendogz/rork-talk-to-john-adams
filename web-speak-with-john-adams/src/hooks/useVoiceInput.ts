@@ -58,6 +58,8 @@ export function useVoiceInput(onTranscript: (text: string) => void): UseVoiceInp
   /** Marks a recording that ended because nobody spoke, so it fails quietly. */
   const noSpeechRef = useRef<boolean>(false);
   const statusRef = useRef<VoiceStatus>("idle");
+  /** Guards against two listeners opening at once (first-touch + a tap). */
+  const startingRef = useRef<boolean>(false);
 
   transcriptHandler.current = onTranscript;
   statusRef.current = status;
@@ -221,27 +223,37 @@ export function useVoiceInput(onTranscript: (text: string) => void): UseVoiceInp
   );
 
   const start = useCallback(async (): Promise<void> => {
-    if (!isSupported || statusRef.current !== "idle") return;
+    if (!isSupported || startingRef.current || statusRef.current !== "idle") return;
+    startingRef.current = true;
     setError(null);
 
-    const stream = await openStream();
-    if (!stream) return;
-    beginRecording(stream);
-  }, [beginRecording, isSupported, openStream]);
-
-  const startAmbient = useCallback(
-    async (onBargeIn: () => void): Promise<void> => {
-      if (!isSupported) return;
-      bargeInHandler.current = onBargeIn;
-      if (statusRef.current === "ambient" || statusRef.current !== "idle") return;
-      setError(null);
-
+    try {
       const stream = await openStream();
       if (!stream || statusRef.current !== "idle") {
         stream?.getTracks().forEach((track) => track.stop());
         return;
       }
-      streamRef.current = stream;
+      beginRecording(stream);
+    } finally {
+      startingRef.current = false;
+    }
+  }, [beginRecording, isSupported, openStream]);
+
+  const startAmbient = useCallback(
+    async (onBargeIn: () => void): Promise<void> => {
+      if (!isSupported || startingRef.current) return;
+      bargeInHandler.current = onBargeIn;
+      if (statusRef.current === "ambient" || statusRef.current !== "idle") return;
+      startingRef.current = true;
+      setError(null);
+
+      try {
+        const stream = await openStream();
+        if (!stream || statusRef.current !== "idle") {
+          stream?.getTracks().forEach((track) => track.stop());
+          return;
+        }
+        streamRef.current = stream;
 
       // Monitor the room while he holds forth: a raised voice, sustained a
       // moment, steps in front of him. Echo cancellation holds his own voice back.
@@ -292,9 +304,12 @@ export function useVoiceInput(onTranscript: (text: string) => void): UseVoiceInp
           }
         }, POLL_MS);
         setStatus("ambient");
-      } catch (ambientError) {
-        console.warn("[adams] ambient listening unavailable", ambientError);
-        releaseStream();
+        } catch (ambientError) {
+          console.warn("[adams] ambient listening unavailable", ambientError);
+          releaseStream();
+        }
+      } finally {
+        startingRef.current = false;
       }
     },
     [beginRecording, isSupported, openStream, releaseStream],
