@@ -1,9 +1,10 @@
-/** D-ID V4 Expressive Agent session. V4 uses LiveKit/fluent streaming automatically. */
+/** D-ID V4 Expressive Agent session. */
 import { createAgentManager, ConnectionState, StreamingState, type AgentManager } from "@d-id/client-sdk";
 import { ADAMS_VOICE_ID } from "@/lib/adams";
 
-export const DID_AGENT_ID = "v2_agt_qstKVH90";
-export const DID_CLIENT_KEY = "ck_I_uBZ-OlQtgXzHKLqaojj";
+/** These can be overridden by Vite environment variables after the real V4 agent is created. */
+export const DID_AGENT_ID = import.meta.env.VITE_DID_AGENT_ID || "v2_agt_qstKVH90";
+export const DID_CLIENT_KEY = import.meta.env.VITE_DID_CLIENT_KEY || "ck_I_uBZ-OlQtgXzHKLqaojj";
 export const DID_IDLE_CLOSE_MS = 150000;
 
 export function isAgentEnabled(): boolean { return DID_AGENT_ID.length > 0 && DID_CLIENT_KEY.length > 0; }
@@ -18,6 +19,7 @@ export interface AdamsAgentCallbacks {
 export async function createAdamsAgentSession(callbacks: AdamsAgentCallbacks): Promise<AgentManager> {
   const manager = await createAgentManager(DID_AGENT_ID, {
     auth: { type: "key", clientKey: DID_CLIENT_KEY },
+    // V4 Expressive transport/fluent settings are managed by D-ID automatically.
     callbacks: {
       onSrcObjectReady: (stream) => callbacks.onStream(stream),
       onVideoStateChange: (state) => { if (state === StreamingState.Stop) callbacks.onIdle?.(); },
@@ -34,9 +36,23 @@ export async function createAdamsAgentSession(callbacks: AdamsAgentCallbacks): P
       onError: (error) => callbacks.onFail(error.message),
     },
   });
-  try { await manager.connect(); }
-  catch (error) { try { await manager.disconnect(); } catch {} throw error; }
+  await manager.connect();
   return manager;
+}
+
+/** Native microphone publishing for true V4 Expressive agents. */
+export async function publishAdamsMicrophone(manager: AgentManager): Promise<MediaStream> {
+  const stream = await navigator.mediaDevices.getUserMedia({
+    audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+  });
+  await manager.publishMicrophoneStream(stream);
+  return stream;
+}
+
+export async function unpublishAdamsMicrophone(manager: AgentManager, stream: MediaStream | null): Promise<void> {
+  try { await manager.unpublishMicrophoneStream(); } finally {
+    stream?.getTracks().forEach((track) => track.stop());
+  }
 }
 
 export async function chatWithAdamsAgent(manager: AgentManager, question: string): Promise<string> {
@@ -44,7 +60,7 @@ export async function chatWithAdamsAgent(manager: AgentManager, question: string
   return response?.result ?? "";
 }
 
-/** V4 Expressive speech: preserve the established Adams voice while varying delivery by context. */
+/** V4 Expressive speech: preserve the established Adams voice and add contextual delivery. */
 export async function speakOnAdamsAgent(manager: AgentManager, text: string): Promise<void> {
   await manager.speak({
     type: "text",
