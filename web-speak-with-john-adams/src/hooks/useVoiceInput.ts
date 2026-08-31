@@ -12,24 +12,20 @@ interface UseVoiceInputResult {
   error: string | null;
   toggle: () => void;
   start: () => Promise<void>;
-  /** Keeps an ear open while he speaks; sustained voice cuts him short. */
   startAmbient: (onBargeIn: () => void) => Promise<void>;
   stopAmbient: () => void;
   clearError: () => void;
 }
 
-const SPEECH_RMS = 0.028;
-const SILENCE_RMS = 0.016;
-/** A beat of quiet ends the turn — snappy, without clipping a drawn breath. */
-const SILENCE_MS = 1000;
+const SPEECH_RMS = 0.022;
+const SILENCE_RMS = 0.013;
+const SILENCE_MS = 900;
 const MAX_RECORDING_MS = 22000;
-const NO_SPEECH_MS = 8000;
-const POLL_MS = 110;
-/** A raised voice, sustained this long, interrupts him mid-sentence. */
-const BARGE_RMS = 0.042;
-const BARGE_MS = 550;
-/** The first moments of his speech are ignored while echo cancellation settles. */
-const BARGE_GRACE_MS = 1500;
+const NO_SPEECH_MS = 12000;
+const POLL_MS = 80;
+const BARGE_RMS = 0.034;
+const BARGE_MS = 450;
+const BARGE_GRACE_MS = 1200;
 
 function pickMimeType(): string | undefined {
   const candidates = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg;codecs=opus"];
@@ -40,27 +36,30 @@ function pickMimeType(): string | undefined {
 }
 
 /**
- * Listens at the microphone and ends the question on its own: once the visitor
- * has spoken and then falls silent for a beat, the recording finishes itself
- * and the transcript is handed to `onTranscript`. In ambient mode it keeps an
- * ear open while Mr. Adams is speaking, so a raised voice yields the floor.
+ * Keeps one microphone stream open for the whole visit. The stream is monitored
+ * continuously, but audio is only recorded into short segments after speech is
+ * detected. This makes the mic feel always ready without repeatedly requesting
+ * microphone permission between turns.
  */
 export function useVoiceInput(onTranscript: (text: string) => void): UseVoiceInputResult {
   const [status, setStatus] = useState<VoiceStatus>("idle");
   const [error, setError] = useState<string | null>(null);
 
+  const streamRef = useRef<MediaStream | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
-  const streamRef = useRef<MediaStream | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
   const pollRef = useRef<number | null>(null);
   const transcriptHandler = useRef(onTranscript);
-  const bargeInHandler = useRef<() => void>(() => undefined);
-  /** Marks a recording that ended because nobody spoke, so it fails quietly. */
-  const noSpeechRef = useRef<boolean>(false);
   const statusRef = useRef<VoiceStatus>("idle");
-  /** Guards against two listeners opening at once (first-touch + a tap). */
-  const startingRef = useRef<boolean>(false);
+  const startingRef = useRef(false);
+  const recordingStartedAtRef = useRef(0);
+  const hasSpokenRef = useRef(false);
+  const lastVoiceAtRef = useRef(0);
+  const modeRef = useRef<"listen" | "ambient">("listen");
+  const bargeInRef = useRef<() => void>(() => undefined);
+  const graceUntilRef = useRef(0);
 
   transcriptHandler.current = onTranscript;
   statusRef.current = status;
@@ -70,56 +69,101 @@ export function useVoiceInput(onTranscript: (text: string) => void): UseVoiceInp
     typeof navigator.mediaDevices?.getUserMedia === "function" &&
     typeof MediaRecorder !== "undefined";
 
-  const releaseStream = useCallback((): void => {
-    streamRef.current?.getTracks().forEach((track) => track.stop());
-    streamRef.current = null;
-    recorderRef.current = null;
+  const stopRecorder = useCallback((): void => {
+    const recorder = recorderRef.current;
+    if (!recorder || recorder.state !== "recording") return;
+    recorder.stop();
+  }, []);
+
+  const closeMicrophone = useCallback((): void => {
     if (pollRef.current !== null) {
       window.clearInterval(pollRef.current);
       pollRef.current = null;
     }
+    try {
+      if (recorderRef.current?.state === "recording") recorderRef.current.stop();
+    } catch {
+      // already stopped
+    }
+    recorderRef.current = null;
+    streamRef.current?.getTracks().forEach((track) => track.stop());
+    streamRef.current = null;
     if (audioCtxRef.current) {
       void audioCtxRef.current.close().catch(() => undefined);
       audioCtxRef.current = null;
     }
+    analyserRef.current = null;
+    hasSpokenRef.current = false;
+    lastVoiceAtRef.current = 0;
+    setStatus("idle");
+    statusRef.current = "idle";
   }, []);
 
-  useEffect(() => {
-    return () => {
-      recorderRef.current?.stop();
-      releaseStream();
-    };
-  }, [releaseStream]);
+  useEffect(() => closeMicrophone, [closeMicrophone]);
 
-  const transcribeAndReport = useCallback((blob: Blob, mimeType: string): void => {
+  const transcribeAndContinue = useCallback((blob: Blob, mimeType: string): void => {
+    // Keep the persistent mic alive while transcription happens.
     if (blob.size < 1200) {
-      setStatus("idle");
-      setError("That was too brief to make out. Hold the seal a moment longer.");
+      setStatus(modeRef.current === "ambient" ? "ambient" : "listening");
+      statusRef.current = modeRef.current === "ambient" ? "ambient" : "listening";
       return;
     }
 
     setStatus("transcribing");
-    // His hearing: the visitor's own OpenAI key when entrusted, the house post otherwise.
-    const transcribe = getSettings().openaiKey ? transcribeWithOpenAI : () => transcribeQuestion(blob, mimeType);
+    statusRef.current = "transcribing";
+    const transcribe = getSettings().openaiKey
+      ? transcribeWithOpenAI
+      : () => transcribeQuestion(blob, mimeType);
+
     transcribe(blob)
       .then((text) => {
-        setStatus("idle");
         transcriptHandler.current(text);
+        const nextStatus = modeRef.current === "ambient" ? "ambient" : "listening";
+        setStatus(nextStatus);
+        statusRef.current = nextStatus;
       })
       .catch((transcribeError: unknown) => {
         console.error("[adams] transcription failed", transcribeError);
-        setStatus("idle");
         setError(
           transcribeError instanceof ToolkitError || transcribeError instanceof OpenAIError
             ? transcribeError.message
             : "Your words could not be made out. Try speaking again.",
         );
+        const nextStatus = modeRef.current === "ambient" ? "ambient" : "listening";
+        setStatus(nextStatus);
+        statusRef.current = nextStatus;
       });
   }, []);
 
-  const openStream = useCallback(async (): Promise<MediaStream | null> => {
+  const beginSegment = useCallback((): void => {
+    const stream = streamRef.current;
+    if (!stream || recorderRef.current?.state === "recording") return;
+
+    chunksRef.current = [];
+    const mimeType = pickMimeType();
+    const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+    recorderRef.current = recorder;
+    recordingStartedAtRef.current = Date.now();
+    hasSpokenRef.current = true;
+
+    recorder.ondataavailable = (event: BlobEvent) => {
+      if (event.data.size > 0) chunksRef.current.push(event.data);
+    };
+
+    recorder.onstop = () => {
+      if (recorderRef.current === recorder) recorderRef.current = null;
+      const blob = new Blob(chunksRef.current, { type: recorder.mimeType || mimeType || "audio/webm" });
+      chunksRef.current = [];
+      transcribeAndContinue(blob, recorder.mimeType || mimeType || "audio/webm");
+    };
+
+    recorder.start();
+    setStatus("listening");
+    statusRef.current = "listening";
+  }, [transcribeAndContinue]);
+
+  const openMicrophone = useCallback(async (): Promise<MediaStream | null> => {
     try {
-      // Echo cancellation keeps his own voice out of the ear that listens.
       return await navigator.mediaDevices.getUserMedia({
         audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
       });
@@ -130,216 +174,127 @@ export function useVoiceInput(onTranscript: (text: string) => void): UseVoiceInp
     }
   }, []);
 
-  /** Assumes the stream is open; builds the recorder and the silence watcher. */
-  const beginRecording = useCallback(
-    (stream: MediaStream): void => {
-      streamRef.current = stream;
-      chunksRef.current = [];
+  const monitor = useCallback((stream: MediaStream): void => {
+    const AudioCtx =
+      window.AudioContext ??
+      (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!AudioCtx) throw new Error("AudioContext unavailable");
 
-      const mimeType = pickMimeType();
-      const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
-      recorderRef.current = recorder;
+    const ctx = new AudioCtx();
+    void ctx.resume();
+    audioCtxRef.current = ctx;
 
-      recorder.ondataavailable = (event: BlobEvent) => {
-        if (event.data.size > 0) chunksRef.current.push(event.data);
-      };
+    const source = ctx.createMediaStreamSource(stream);
+    const analyser = ctx.createAnalyser();
+    analyser.fftSize = 512;
+    analyser.smoothingTimeConstant = 0.4;
+    source.connect(analyser);
+    analyserRef.current = analyser;
 
-      recorder.onstop = () => {
-        const blob = new Blob(chunksRef.current, { type: recorder.mimeType || "audio/webm" });
-        const recordedType = recorder.mimeType || "audio/webm";
-        const wasSilent = noSpeechRef.current;
-        noSpeechRef.current = false;
-        releaseStream();
-        // Auto-listening with no reply offered ends quietly, without complaint.
-        if (wasSilent) {
-          setStatus("idle");
-          return;
-        }
-        transcribeAndReport(blob, recordedType);
-      };
+    const data = new Uint8Array(analyser.fftSize);
+    graceUntilRef.current = Date.now() + BARGE_GRACE_MS;
 
-      recorder.start();
+    pollRef.current = window.setInterval(() => {
+      analyser.getByteTimeDomainData(data);
+      let sum = 0;
+      for (let i = 0; i < data.length; i += 1) {
+        const v = (data[i] - 128) / 128;
+        sum += v * v;
+      }
+      const rms = Math.sqrt(sum / data.length);
+      const now = Date.now();
+      const recording = recorderRef.current?.state === "recording";
 
-      // Voice-activity watch: end the question once he hears silence.
-      try {
-        const AudioCtx =
-          window.AudioContext ??
-          (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-        if (!AudioCtx) throw new Error("AudioContext unavailable");
-
-        const ctx = new AudioCtx();
-        void ctx.resume();
-        audioCtxRef.current = ctx;
-
-        const source = ctx.createMediaStreamSource(stream);
-        const analyser = ctx.createAnalyser();
-        analyser.fftSize = 512;
-        source.connect(analyser);
-
-        const data = new Uint8Array(analyser.fftSize);
-        const startAt = Date.now();
-        let hasSpoken = false;
-        let lastVoiceAt = startAt;
-        let level = 0;
-
-        pollRef.current = window.setInterval(() => {
-          analyser.getByteTimeDomainData(data);
-          let sum = 0;
-          for (let i = 0; i < data.length; i += 1) {
-            const v = (data[i] - 128) / 128;
-            sum += v * v;
-          }
-          const rms = Math.sqrt(sum / data.length);
-          level = Math.max(rms, level * 0.72);
-          const now = Date.now();
-
-          if (level > SPEECH_RMS) {
-            hasSpoken = true;
-            lastVoiceAt = now;
-          }
-
-          if (!hasSpoken && now - startAt > NO_SPEECH_MS) {
-            noSpeechRef.current = true;
-            recorder.stop();
-            return;
-          }
-          if (hasSpoken && level < SILENCE_RMS && now - lastVoiceAt >= SILENCE_MS) {
-            recorder.stop();
-            return;
-          }
-          if (now - startAt > MAX_RECORDING_MS) {
-            recorder.stop();
-          }
-        }, POLL_MS);
-      } catch (vadError) {
-        console.warn("[adams] silence detection unavailable; recording will run to its cap", vadError);
-        pollRef.current = window.setTimeout(() => {
-          if (recorderRef.current?.state === "recording") recorderRef.current.stop();
-        }, MAX_RECORDING_MS) as unknown as number;
+      if (recording) {
+        if (rms > SPEECH_RMS) lastVoiceAtRef.current = now;
+        const tooLong = now - recordingStartedAtRef.current >= MAX_RECORDING_MS;
+        const quietLongEnough =
+          hasSpokenRef.current && rms < SILENCE_RMS && now - lastVoiceAtRef.current >= SILENCE_MS;
+        if (tooLong || quietLongEnough) stopRecorder();
+        return;
       }
 
-      setStatus("listening");
-    },
-    [releaseStream, transcribeAndReport],
-  );
+      if (modeRef.current === "ambient") {
+        if (now < graceUntilRef.current || rms <= BARGE_RMS) return;
+        if (lastVoiceAtRef.current === 0) lastVoiceAtRef.current = now;
+        if (now - lastVoiceAtRef.current >= BARGE_MS) {
+          bargeInRef.current();
+          lastVoiceAtRef.current = now;
+          beginSegment();
+        }
+        return;
+      }
 
-  const start = useCallback(async (): Promise<void> => {
-    if (!isSupported || startingRef.current || statusRef.current !== "idle") return;
+      if (rms > SPEECH_RMS) {
+        hasSpokenRef.current = true;
+        lastVoiceAtRef.current = now;
+        beginSegment();
+      } else if (!hasSpokenRef.current && now - graceUntilRef.current > NO_SPEECH_MS) {
+        // Remain ready; do not shut down the microphone just because the visitor
+        // has taken a long pause.
+        hasSpokenRef.current = false;
+        graceUntilRef.current = now;
+      }
+    }, POLL_MS);
+  }, [beginSegment, stopRecorder]);
+
+  const ensureOpen = useCallback(async (): Promise<void> => {
+    if (!isSupported || startingRef.current || streamRef.current) return;
     startingRef.current = true;
     setError(null);
 
     try {
-      const stream = await openStream();
-      if (!stream || statusRef.current !== "idle") {
-        stream?.getTracks().forEach((track) => track.stop());
-        return;
-      }
-      beginRecording(stream);
+      const stream = await openMicrophone();
+      if (!stream) return;
+      streamRef.current = stream;
+      monitor(stream);
+      const nextStatus = modeRef.current === "ambient" ? "ambient" : "listening";
+      setStatus(nextStatus);
+      statusRef.current = nextStatus;
+    } catch (error) {
+      console.error("[adams] microphone monitor unavailable", error);
+      stream?.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+      setError("The microphone could not be kept open in this browser.");
     } finally {
       startingRef.current = false;
     }
-  }, [beginRecording, isSupported, openStream]);
+  }, [isSupported, monitor, openMicrophone]);
+
+  const start = useCallback(async (): Promise<void> => {
+    modeRef.current = "listen";
+    await ensureOpen();
+  }, [ensureOpen]);
 
   const startAmbient = useCallback(
     async (onBargeIn: () => void): Promise<void> => {
-      if (!isSupported || startingRef.current) return;
-      bargeInHandler.current = onBargeIn;
-      if (statusRef.current === "ambient" || statusRef.current !== "idle") return;
-      startingRef.current = true;
-      setError(null);
-
-      try {
-        const stream = await openStream();
-        if (!stream || statusRef.current !== "idle") {
-          stream?.getTracks().forEach((track) => track.stop());
-          return;
-        }
-        streamRef.current = stream;
-
-      // Monitor the room while he holds forth: a raised voice, sustained a
-      // moment, steps in front of him. Echo cancellation holds his own voice back.
-      try {
-        const AudioCtx =
-          window.AudioContext ??
-          (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-        if (!AudioCtx) throw new Error("AudioContext unavailable");
-
-        const ctx = new AudioCtx();
-        void ctx.resume();
-        audioCtxRef.current = ctx;
-
-        const source = ctx.createMediaStreamSource(stream);
-        const analyser = ctx.createAnalyser();
-        analyser.fftSize = 512;
-        source.connect(analyser);
-
-        const data = new Uint8Array(analyser.fftSize);
-        const graceUntil = Date.now() + BARGE_GRACE_MS;
-        let loudSince: number | null = null;
-        let level = 0;
-
-        pollRef.current = window.setInterval(() => {
-          analyser.getByteTimeDomainData(data);
-          let sum = 0;
-          for (let i = 0; i < data.length; i += 1) {
-            const v = (data[i] - 128) / 128;
-            sum += v * v;
-          }
-          const rms = Math.sqrt(sum / data.length);
-          level = Math.max(rms, level * 0.72);
-          const now = Date.now();
-
-          if (now < graceUntil || level <= BARGE_RMS) {
-            loudSince = null;
-            return;
-          }
-          if (loudSince === null) {
-            loudSince = now;
-            return;
-          }
-          if (now - loudSince >= BARGE_MS) {
-            const liveStream = streamRef.current;
-            releaseStream();
-            bargeInHandler.current();
-            if (liveStream) beginRecording(liveStream);
-          }
-        }, POLL_MS);
+      modeRef.current = "ambient";
+      bargeInRef.current = onBargeIn;
+      await ensureOpen();
+      if (streamRef.current) {
+        graceUntilRef.current = Date.now() + BARGE_GRACE_MS;
         setStatus("ambient");
-        } catch (ambientError) {
-          console.warn("[adams] ambient listening unavailable", ambientError);
-          releaseStream();
-        }
-      } finally {
-        startingRef.current = false;
+        statusRef.current = "ambient";
       }
     },
-    [beginRecording, isSupported, openStream, releaseStream],
+    [ensureOpen],
   );
 
   const stopAmbient = useCallback((): void => {
-    if (statusRef.current !== "ambient") return;
-    releaseStream();
-    setStatus("idle");
-  }, [releaseStream]);
-
-  const stop = useCallback((): void => {
-    if (recorderRef.current?.state === "recording") {
-      recorderRef.current.stop();
+    modeRef.current = "listen";
+    if (streamRef.current) {
+      setStatus("listening");
+      statusRef.current = "listening";
     }
   }, []);
 
   const toggle = useCallback((): void => {
-    if (statusRef.current === "listening") {
-      stop();
+    if (streamRef.current) {
+      closeMicrophone();
       return;
     }
-    if (statusRef.current === "ambient") {
-      stopAmbient();
-      void start();
-      return;
-    }
-    if (statusRef.current === "idle") void start();
-  }, [start, stop, stopAmbient]);
+    void start();
+  }, [closeMicrophone, start]);
 
   const clearError = useCallback((): void => setError(null), []);
 
