@@ -113,8 +113,15 @@ function AdamsStageComponent({ phase, mouthLevelRef, didStream }: AdamsStageProp
   return (
     <div className="pointer-events-none absolute inset-0 overflow-hidden bg-stage" aria-hidden="true">
       <>
-          {/* The room itself: he stands, holding forth — lips and blinks live here. */}
-          <div className="adams-breathe absolute inset-0">
+          {/* The room itself: he stands, holding forth — lips and blinks live here.
+              While the live stream shows, the painted layers stand down entirely:
+              one Adams on the stage, never two. */}
+          <div
+            className={cn(
+              "adams-breathe absolute inset-0 transition-opacity duration-700",
+              didStream ? "opacity-0" : "opacity-100",
+            )}
+          >
             <div className={layerClass}>
               <img
                 src={ADAMS_PORTRAIT_URL}

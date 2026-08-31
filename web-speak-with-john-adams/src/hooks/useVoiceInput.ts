@@ -20,7 +20,8 @@ interface UseVoiceInputResult {
 
 const SPEECH_RMS = 0.028;
 const SILENCE_RMS = 0.016;
-const SILENCE_MS = 1600;
+/** A beat of quiet ends the turn — snappy, without clipping a drawn breath. */
+const SILENCE_MS = 1000;
 const MAX_RECORDING_MS = 22000;
 const NO_SPEECH_MS = 8000;
 const POLL_MS = 110;

@@ -130,10 +130,10 @@ export async function destroyAdamsAgentSession(manager: AgentManager): Promise<v
   }
 }
 
-/** Rough speaking duration, so captions can follow the rendered voice. */
+/** Rough speaking duration, so captions keep pace with normal talking speed. */
 export function estimateSpeechSeconds(text: string): number {
   const words = text.split(/\s+/).filter(Boolean).length;
-  return Math.max(1.2, words / 2.4);
+  return Math.max(1.2, words / 2.8);
 }
 
 /** Splits an answer into sentence-safe pieces the studio can stitch. */

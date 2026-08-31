@@ -84,7 +84,17 @@ const Index = () => {
     }
   }, [phase, stopSpeaking, voice]);
 
-  // The ear is always on: the page's first touch or keystroke opens the microphone.
+  // The ear opens the moment the page loads — hands-free from the first beat.
+  // While the greeting holds the floor, the ambient ear is armed instead, and
+  // the listening ear opens of its own accord when he falls quiet.
+  const hasOpenedEarRef = useRef<boolean>(false);
+  useEffect(() => {
+    if (hasOpenedEarRef.current || phase === "speaking") return;
+    hasOpenedEarRef.current = true;
+    if (voice.status === "idle") void voice.start();
+  }, [phase, voice]);
+
+  // A fallback for a denied permission: the first touch re-asks for the ear.
   useEffect(() => {
     const openEar = (): void => {
       if (voiceRef.current?.status === "idle") void voiceRef.current.start();

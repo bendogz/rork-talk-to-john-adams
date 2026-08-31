@@ -33,7 +33,7 @@ interface ConversationState {
   needsPlaybackTap: boolean;
 }
 
-const WORDS_PER_SECOND_FALLBACK = 2.6;
+const WORDS_PER_SECOND_FALLBACK = 2.8;
 const CONVERSATION_KEY = "speak-with-adams.conversation.v1";
 const MAX_SAVED_EXCHANGES = 20;
 /** Guards the spoken introduction against StrictMode's double mounting. */
@@ -505,6 +505,13 @@ export function useAdamsConversation({ onAnswerComplete }: UseAdamsConversationO
     }));
     void speakAndPlay(greeting.answer, controller.signal);
   }, [restoredExchanges, speakAndPlay]);
+
+  // Warm the living portrait as the page loads, so the first answer starts the
+  // moment it is thought of — no dead wait while the stream negotiates.
+  useEffect(() => {
+    if (!isAgentEnabled()) return;
+    void ensureAgent().catch(() => undefined);
+  }, [ensureAgent]);
 
   const ask = useCallback(
     async (rawQuestion: string): Promise<void> => {

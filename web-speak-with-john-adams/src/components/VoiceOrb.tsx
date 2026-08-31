@@ -22,7 +22,10 @@ const STATUS_TEXT: Record<VoiceStatus, string> = {
  * speaks, and the question ends itself once they fall quiet.
  */
 export function VoiceOrb({ status, isSupported, disabled, onPress }: VoiceOrbProps) {
+  /** Armed: the ear is open and a raised voice interrupts him. */
+  const isArmed = status === "listening" || status === "ambient";
   const isListening = status === "listening";
+  const isAmbient = status === "ambient";
   const isTranscribing = status === "transcribing";
 
   return (
@@ -30,12 +33,16 @@ export function VoiceOrb({ status, isSupported, disabled, onPress }: VoiceOrbPro
       <div className="relative flex items-center justify-center">
         {isListening ? (
           <>
-            <span className="animate-ping absolute h-20 w-20 rounded-full bg-gold/30 sm:h-24 sm:w-24" />
+            <span className="animate-ping absolute h-20 w-20 rounded-full bg-[hsl(4_72%_45%/0.35)] sm:h-24 sm:w-24" />
             <span
-              className="animate-ping absolute h-20 w-20 rounded-full bg-gold/20 sm:h-24 sm:w-24"
+              className="animate-ping absolute h-20 w-20 rounded-full bg-[hsl(4_72%_45%/0.22)] sm:h-24 sm:w-24"
               style={{ animationDelay: "450ms" }}
             />
           </>
+        ) : null}
+
+        {isAmbient ? (
+          <span className="animate-pulse absolute h-[4.6rem] w-[4.6rem] rounded-full bg-[hsl(4_72%_45%/0.26)] sm:h-[5.6rem] sm:w-[5.6rem]" />
         ) : null}
 
         <button
@@ -43,12 +50,12 @@ export function VoiceOrb({ status, isSupported, disabled, onPress }: VoiceOrbPro
           onClick={onPress}
           disabled={disabled || !isSupported || isTranscribing}
           aria-label={isListening ? "Finish my question" : "Speak to Mr. Adams"}
-          aria-pressed={isListening}
+          aria-pressed={isArmed}
           className={cn(
             "relative flex h-20 w-20 items-center justify-center rounded-full border-2 transition-[transform,box-shadow,background-color] duration-300 sm:h-24 sm:w-24",
             "bg-[radial-gradient(circle_at_35%_30%,hsl(8_55%_34%),hsl(11_68%_22%)_70%)]",
-            isListening
-              ? "border-gold-bright shadow-[0_0_0_6px_hsl(41_60%_50%/0.18),0_14px_36px_hsl(34_45%_3%/0.7)]"
+            isArmed
+              ? "border-[hsl(4_78%_56%)] shadow-[0_0_0_6px_hsl(4_72%_45%/0.2),0_14px_36px_hsl(34_45%_3%/0.7)]"
               : "border-[hsl(41_45%_42%/0.7)] shadow-[0_10px_30px_hsl(34_45%_3%/0.65)]",
             "hover:brightness-110 active:scale-95 disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:brightness-100",
           )}
