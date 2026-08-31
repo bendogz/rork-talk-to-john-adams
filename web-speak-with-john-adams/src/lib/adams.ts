@@ -1,15 +1,16 @@
 import { ADAMS_KNOWLEDGE } from "./adams-knowledge";
 
-/** The agent's own face: the Expressive avatar D-ID brings to life on the stream.
- *  Shown as the still scene whenever the live video is absent — one face, always. */
+/** The full-bleed oil-painting portrait that fills the stage — and the face D-ID brings to life. */
 export const ADAMS_PORTRAIT_URL =
-  "https://scenes-avatars.d-id.com/google-oauth2%7C116081849206873258456/avt_rbqBKyCkk1VA-iXmtMUxY/image.png";
+  "https://r2-pub.rork.com/projects/jik0ntwupcavtim1umit5/assets/ba4d35d3-ba93-45d3-b9e0-26d770a9947a.png";
 
-/** Painted-face edits, retired: the agent's face carries every expression now. */
-export const ADAMS_MOUTH_OPEN_URL: string | null = null;
+/** Edit of the base portrait with the mouth open — cross-faded while he speaks. */
+export const ADAMS_MOUTH_OPEN_URL: string | null =
+  "https://r2-pub.rork.com/projects/jik0ntwupcavtim1umit5/assets/7d45c260-9111-467b-8229-be6c283e43c5.png";
 
-/** Painted-face edits, retired: the agent's face carries every expression now. */
-export const ADAMS_EYES_CLOSED_URL: string | null = null;
+/** Edit of the base portrait with the eyes closed — cross-faded for blinks. */
+export const ADAMS_EYES_CLOSED_URL: string | null =
+  "https://r2-pub.rork.com/projects/jik0ntwupcavtim1umit5/assets/b2087bf0-8e5d-42c2-8a90-20dd8a3e627c.png";
 
 /** ElevenLabs voice: mature, crisp, American male — Mr. Adams' speaking voice. */
 export const ADAMS_VOICE_ID = "pqHfZKP75CvOlQylNhV4";
