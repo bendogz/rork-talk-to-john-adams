@@ -9,6 +9,7 @@ import {
   estimateSpeechSeconds,
   isAgentEnabled,
   speakOnAdamsAgent,
+  stopAdamsSpeech,
   type AdamsAgentCallbacks,
 } from "@/lib/didAgent";
 import { ElevenLabsError, speakWithElevenLabs } from "@/lib/elevenlabs";
@@ -42,15 +43,13 @@ function loadSavedConversation(): Exchange[] {
     if (!raw) return [];
     const parsed = JSON.parse(raw) as unknown;
     if (!Array.isArray(parsed)) return [];
-    return parsed
-      .filter(
-        (item): item is Exchange =>
-          typeof item === "object" && item !== null &&
-          typeof (item as Exchange).id === "string" &&
-          typeof (item as Exchange).question === "string" &&
-          typeof (item as Exchange).answer === "string",
-      )
-      .slice(-MAX_SAVED_EXCHANGES);
+    return parsed.filter(
+      (item): item is Exchange =>
+        typeof item === "object" && item !== null &&
+        typeof (item as Exchange).id === "string" &&
+        typeof (item as Exchange).question === "string" &&
+        typeof (item as Exchange).answer === "string",
+    ).slice(-MAX_SAVED_EXCHANGES);
   } catch {
     return [];
   }
@@ -110,6 +109,7 @@ export function useAdamsConversation({ onAnswerComplete }: UseAdamsConversationO
 
   const destroyAgent = useCallback(() => {
     clearAgentIdleTimer();
+    stopAdamsSpeech();
     const manager = agentRef.current;
     agentRef.current = null;
     agentBootRef.current = null;
@@ -182,6 +182,7 @@ export function useAdamsConversation({ onAnswerComplete }: UseAdamsConversationO
     return () => {
       clearRevealTimer();
       abortRef.current?.abort();
+      stopAdamsSpeech();
       destroyAgent();
     };
   }, [clearRevealTimer, destroyAgent]);
@@ -190,6 +191,7 @@ export function useAdamsConversation({ onAnswerComplete }: UseAdamsConversationO
     saveConversation(state.exchanges.filter((exchange) => exchange.question.length > 0));
   }, [state.exchanges]);
 
+  // Warm the one shared D-ID session while the page is idle.
   useEffect(() => {
     if (!isAgentEnabled()) return;
     void ensureAgent().catch(() => undefined);
@@ -200,6 +202,7 @@ export function useAdamsConversation({ onAnswerComplete }: UseAdamsConversationO
 
     if (isAgentEnabled()) {
       const manager = await ensureAgent();
+      if (signal.aborted) return;
       startReveal(answer, estimateSpeechSeconds(answer));
       await speakOnAdamsAgent(manager, answer);
       if (signal.aborted) return;
@@ -224,10 +227,21 @@ export function useAdamsConversation({ onAnswerComplete }: UseAdamsConversationO
     const audio = new Audio(url);
     audio.preload = "auto";
     audio.setAttribute("playsinline", "true");
-    const cleanup = () => URL.revokeObjectURL(url);
-    audio.onended = () => { cleanup(); finishSpeaking(); onAnswerCompleteRef.current?.(); };
-    audio.onerror = cleanup;
-    await audio.play().catch(() => setState((prev) => ({ ...prev, needsPlaybackTap: true })));
+    startReveal(answer, estimateSpeechSeconds(answer));
+    try {
+      await audio.play();
+      await new Promise<void>((resolve, reject) => {
+        audio.onended = resolve;
+        audio.onerror = () => reject(new Error("Speech playback failed."));
+      });
+    } finally {
+      audio.pause();
+      URL.revokeObjectURL(url);
+    }
+    if (!signal.aborted) {
+      finishSpeaking();
+      onAnswerCompleteRef.current?.();
+    }
   }, [ensureAgent, finishSpeaking, startReveal]);
 
   useEffect(() => {
@@ -248,24 +262,23 @@ export function useAdamsConversation({ onAnswerComplete }: UseAdamsConversationO
 
     const requestId = ++requestIdRef.current;
     abortRef.current?.abort();
+    stopAdamsSpeech();
+    clearRevealTimer();
     const controller = new AbortController();
     abortRef.current = controller;
-
-    clearRevealTimer();
     pendingAnswerRef.current = "";
+
     setState((prev) => ({ ...prev, phase: "considering", error: null, revealedAnswer: "", needsPlaybackTap: false }));
 
     try {
+      // Exactly one mind answers each question. The D-ID V2 Agent is the
+      // presenter only; asking it for a second answer caused competing voices.
       const history: ChatTurn[] = exchangesRef.current
         .filter((exchange) => exchange.question.length > 0)
         .flatMap((exchange) => [
           { role: "user" as const, content: exchange.question },
           { role: "assistant" as const, content: exchange.answer },
         ]);
-
-      // Exactly one mind answers the question. The D-ID V2 Agent is the live
-      // presenter; it is not separately asked to answer, which prevents a
-      // second generated voice from competing with ElevenLabs.
       const settings = getSettings();
       const answer = settings.openaiKey
         ? await askAdamsWithOpenAI(question, history, controller.signal)
@@ -293,20 +306,23 @@ export function useAdamsConversation({ onAnswerComplete }: UseAdamsConversationO
           ? error.message
           : "Something went awry. Try once more.";
       console.error("[adams] question failed", error);
-      setState((prev) => ({ ...prev, phase: prev.exchanges.length > 0 ? "resting" : "welcome", error }));
+      setState((prev) => ({
+        ...prev,
+        phase: prev.exchanges.length > 0 ? "resting" : "welcome",
+        error: message,
+      }));
     }
   }, [clearRevealTimer, speakAnswer]);
 
   const stopSpeaking = useCallback(() => {
     requestIdRef.current += 1;
     abortRef.current?.abort();
+    stopAdamsSpeech();
     destroyAgent();
     finishSpeaking();
   }, [destroyAgent, finishSpeaking]);
 
   const retryPlayback = useCallback(() => {
-    // Browser playback is intentionally handled by the normal question flow;
-    // the live D-ID session itself has no second local audio element to restart.
     setState((prev) => ({ ...prev, needsPlaybackTap: false }));
   }, []);
 
