@@ -34,6 +34,9 @@ export async function createAdamsAgentSession(callbacks: AdamsAgentCallbacks): P
 
   sharedBoot = createAgentManager(DID_AGENT_ID, {
     auth: { type: "key", clientKey: DID_CLIENT_KEY },
+    // V2 supports a warmup stream, so the exact Studio Agent becomes visible
+    // as soon as the WebRTC session connects instead of waiting for a question.
+    streamOptions: { compatibilityMode: "auto", streamWarmup: true, outputResolution: 720 },
     callbacks: {
       onSrcObjectReady: (stream) => {
         sharedStream = stream;
