@@ -1,5 +1,7 @@
 /** D-ID Agent session for the V2 photo/talk presenter. */
 import { createAgentManager, ConnectionState, StreamingState, type AgentManager } from "@d-id/client-sdk";
+import { speakWithElevenLabs } from "@/lib/elevenlabs";
+import { getSettings } from "@/lib/settings";
 
 /** The exact V2 D-ID Agent selected in D-ID Studio. */
 export const DID_AGENT_ID = import.meta.env.VITE_DID_AGENT_ID || "v2_agt_lhKl4JJ3";
@@ -56,13 +58,43 @@ export async function chatWithAdamsAgent(manager: AgentManager, question: string
   return response?.result ?? "";
 }
 
-/** V2-compatible speech helper: use the voice configured on the D-ID Agent itself. */
+/**
+ * Drive the D-ID avatar's mouth while the browser plays the project's
+ * ElevenLabs voice. The D-ID video element is muted, so the visitor hears only
+ * ElevenLabs. D-ID remains responsible for the live avatar rendering and the
+ * Agent's knowledge/chat response.
+ */
 export async function speakOnAdamsAgent(manager: AgentManager, text: string): Promise<void> {
-  await manager.speak({
+  const settings = getSettings();
+  if (!settings.elevenlabsKey || settings.ttsProvider !== "elevenlabs") {
+    throw new Error("ElevenLabs is not configured as the active voice provider.");
+  }
+
+  // Start the avatar animation using the same words. Its audio is muted in
+  // AdamsStage, so this call is used only to drive the D-ID face.
+  void manager.speak({
     type: "text",
     input: text,
     should_queue_speaks: true,
+  }).catch((error) => {
+    console.warn("[adams] D-ID lip animation failed", error);
   });
+
+  const url = await speakWithElevenLabs(text);
+  const audio = new Audio(url);
+  audio.preload = "auto";
+  audio.setAttribute("playsinline", "true");
+
+  try {
+    await audio.play();
+    await new Promise<void>((resolve, reject) => {
+      audio.onended = () => resolve();
+      audio.onerror = () => reject(new Error("ElevenLabs audio playback failed."));
+    });
+  } finally {
+    audio.pause();
+    URL.revokeObjectURL(url);
+  }
 }
 
 export async function destroyAdamsAgentSession(manager: AgentManager): Promise<void> {
