@@ -51,9 +51,15 @@ export function useAdamsConversation() {
     }
   }, []);
 
-  // Deliberately do NOT connect on page load. The D-ID Agent is warmed up only
-  // when the visitor presses “Ready to Talk”, so the expensive WebRTC connection
-  // happens at the moment the conversation is actually started.
+  // Pre-connect as soon as the conversation UI mounts. This keeps John Adams
+  // already present and ready to talk instead of making the visitor wait after
+  // pressing “Ready to Talk”.
+  useEffect(() => {
+    void ensureAgent().catch(() => {
+      // ensureAgent already exposes the user-facing error state.
+    });
+  }, [ensureAgent]);
+
   const startConversation = useCallback(async () => {
     setError(null);
     try {
