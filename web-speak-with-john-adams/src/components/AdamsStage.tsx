@@ -24,9 +24,6 @@ function AdamsStageComponent({ phase, didStream }: AdamsStageProps) {
     };
   }, [didStream]);
 
-  const frameClass =
-    "absolute left-0 h-[110%] w-full -translate-y-[4%] object-cover object-[50%_8%]";
-
   return (
     <div className="pointer-events-none absolute inset-0 overflow-hidden bg-stage" aria-hidden="true">
       {didStream ? (
@@ -34,7 +31,10 @@ function AdamsStageComponent({ phase, didStream }: AdamsStageProps) {
           ref={didVideoRef}
           autoPlay
           playsInline
-          className={cn(frameClass, "motion-fade-in")}
+          muted
+          className={cn(
+            "absolute inset-0 h-full w-full object-cover object-center motion-fade-in",
+          )}
         />
       ) : (
         <div className="absolute inset-0 bg-stage" />
