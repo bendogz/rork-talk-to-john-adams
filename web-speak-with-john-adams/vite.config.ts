@@ -18,7 +18,7 @@ export default defineConfig(({ mode }) => ({
       "@": path.resolve(__dirname, "./src"),
     },
   },
-  // Expose both VITE_* (Vite default) and EXPO_PUBLIC_* (Rork's cross-platform
-  // public-env convention, written by tools like getOrCreateAuthConfig).
-  envPrefix: ["VITE_", "EXPO_PUBLIC_"],
+  // D-ID may be configured in Rork as VITE_*, EXPO_PUBLIC_*, or DID_*.
+  // Keep all supported public prefixes available to the browser build.
+  envPrefix: ["VITE_", "EXPO_PUBLIC_", "DID_"],
 }));
