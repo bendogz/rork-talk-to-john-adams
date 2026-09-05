@@ -6,6 +6,7 @@ import {
   stopAdamsSpeech,
   type AdamsAgentSession,
 } from "../lib/didAgent";
+import { ADAMS_GREETING_SPEECH } from "../lib/adams";
 import { askAdamsWithOpenAI } from "../lib/adamsBrain";
 
 export function useAdamsConversation() {
@@ -16,6 +17,8 @@ export function useAdamsConversation() {
   const [error, setError] = useState<string | null>(null);
   const sessionRef = useRef<AdamsAgentSession | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const greetingPlayedRef = useRef(false);
+  const greetingPromiseRef = useRef<Promise<void> | null>(null);
 
   const ensureAgent = useCallback(async () => {
     if (sessionRef.current) return sessionRef.current;
@@ -42,6 +45,22 @@ export function useAdamsConversation() {
       });
 
       sessionRef.current = session;
+
+      // The visitor should hear John Adams introduce himself immediately after
+      // the live Agent connection is established. Play this exactly once for
+      // this conversation session, using the same single audible voice path as
+      // every later answer.
+      if (!greetingPlayedRef.current) {
+        greetingPlayedRef.current = true;
+        setIsSpeaking(true);
+        greetingPromiseRef.current = speakOnAdamsAgent(session, ADAMS_GREETING_SPEECH)
+          .finally(() => {
+            greetingPromiseRef.current = null;
+            setIsSpeaking(false);
+          });
+        await greetingPromiseRef.current;
+      }
+
       return session;
     } catch (err) {
       setIsConnecting(false);
@@ -80,14 +99,17 @@ export function useAdamsConversation() {
       abortRef.current = controller;
 
       try {
-        await ensureAgent();
+        const session = await ensureAgent();
+        if (greetingPromiseRef.current) await greetingPromiseRef.current;
+        if (controller.signal.aborted) return;
+
         const answer = await askAdamsWithOpenAI(question, controller.signal);
         if (controller.signal.aborted) return;
 
         setIsThinking(false);
         setIsSpeaking(true);
         try {
-          await speakOnAdamsAgent(answer);
+          await speakOnAdamsAgent(session, answer);
         } finally {
           setIsSpeaking(false);
         }
