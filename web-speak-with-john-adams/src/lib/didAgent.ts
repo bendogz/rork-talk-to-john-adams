@@ -32,7 +32,6 @@ export interface AdamsAgentCallbacks {
   onFail: (message: string) => void;
 }
 
-// One shared WebRTC session prevents duplicate presenters and stream swapping.
 let sharedManager: AgentManager | null = null;
 let sharedBoot: Promise<AgentManager> | null = null;
 let sharedStream: MediaStream | null = null;
@@ -53,8 +52,6 @@ export async function createAdamsAgentSession(callbacks: AdamsAgentCallbacks): P
 
   sharedBoot = createAgentManager(DID_AGENT_ID, {
     auth: { type: "key", clientKey: DID_CLIENT_KEY },
-    // D-ID recommends VP8 for V2/V3 compatibility. 1080 improves clarity on
-    // retina/desktop displays while warmup keeps the presenter visible early.
     streamOptions: {
       compatibilityMode: "on",
       streamWarmup: true,
@@ -66,9 +63,7 @@ export async function createAdamsAgentSession(callbacks: AdamsAgentCallbacks): P
         for (const subscriber of subscribers) subscriber.onStream(stream);
       },
       onVideoStateChange: (state) => {
-        if (state === StreamingState.Stop) {
-          for (const subscriber of subscribers) subscriber.onIdle?.();
-        }
+        if (state === StreamingState.Stop) for (const subscriber of subscribers) subscriber.onIdle?.();
       },
       onNewMessage: (messages, type) => {
         if (type !== "answer") return;
@@ -116,17 +111,9 @@ export async function destroyAdamsAgentSession(manager: AgentManager): Promise<v
   subscribers.clear();
 
   if (current) {
-    try {
-      await current.disconnect();
-    } catch (e) {
-      console.warn("[adams] session cleanup failed", e);
-    }
+    try { await current.disconnect(); } catch (e) { console.warn("[adams] session cleanup failed", e); }
   } else if (manager) {
-    try {
-      await manager.disconnect();
-    } catch (e) {
-      console.warn("[adams] session cleanup failed", e);
-    }
+    try { await manager.disconnect(); } catch (e) { console.warn("[adams] session cleanup failed", e); }
   }
 }
 
@@ -138,36 +125,30 @@ export async function unpublishAdamsMicrophone(_manager: AgentManager, stream: M
   stream?.getTracks().forEach((track) => track.stop());
 }
 
-export async function chatWithAdamsAgent(manager: AgentManager, question: string): Promise<string> {
-  const response = await manager.chat(question);
-  return response?.result ?? "";
-}
-
+/**
+ * One speech source only: ElevenLabs supplies the audible voice, while the
+ * D-ID Agent supplies the live presenter/lip animation. Queued D-ID speech is
+ * deliberately disabled so a second answer can never stack behind the first.
+ */
 export async function speakOnAdamsAgent(manager: AgentManager, text: string): Promise<void> {
   const settings = getSettings();
   if (!settings.elevenlabsKey || settings.ttsProvider !== "elevenlabs") {
     throw new Error("ElevenLabs is not configured as the active voice provider.");
   }
 
-  void manager.speak({
-    type: "text",
-    input: text,
-    should_queue_speaks: true,
-  }).catch((error) => console.warn("[adams] D-ID lip animation failed", error));
-
   const url = await speakWithElevenLabs(text);
-  const audio = new Audio(url);
-  audio.preload = "auto";
-  audio.setAttribute("playsinline", "true");
-
   try {
+    await manager.speak({ type: "text", input: text, should_queue_speaks: false });
+    const audio = new Audio(url);
+    audio.preload = "auto";
+    audio.setAttribute("playsinline", "true");
     await audio.play();
     await new Promise<void>((resolve, reject) => {
       audio.onended = () => resolve();
       audio.onerror = () => reject(new Error("ElevenLabs audio playback failed."));
     });
-  } finally {
     audio.pause();
+  } finally {
     URL.revokeObjectURL(url);
   }
 }
@@ -177,20 +158,7 @@ export function estimateSpeechSeconds(text: string): number {
 }
 
 export function chunkAnswer(text: string): string[] {
-  // Fewer, larger chunks avoids visible/voice resets between sentences.
-  const max = 900;
-  const sentences = text.match(/[^.!?\n]+[.!?]*["'”’)]*\s*|\S+$/g) ?? [text];
-  const chunks: string[] = [];
-  let current = "";
-  for (const sentence of sentences) {
-    if (current && current.length + sentence.length > max) {
-      chunks.push(current.trim());
-      current = "";
-    }
-    current += sentence;
-  }
-  if (current.trim()) chunks.push(current.trim());
-  return chunks;
+  return [text];
 }
 
 export function agentSleep(ms: number): Promise<void> {
