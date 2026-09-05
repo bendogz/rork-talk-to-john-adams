@@ -1,7 +1,6 @@
-import { memo, useEffect, useRef, useState, type MutableRefObject } from "react";
+import { memo, useEffect, useRef, type MutableRefObject } from "react";
 
 import type { StagePhase } from "@/hooks/useAdamsConversation";
-import { ADAMS_EYES_CLOSED_URL, ADAMS_PORTRAIT_URL } from "@/lib/adams";
 import { cn } from "@/lib/utils";
 
 interface AdamsStageProps {
@@ -12,42 +11,17 @@ interface AdamsStageProps {
 
 function AdamsStageComponent({ phase, didStream }: AdamsStageProps) {
   const isSpeaking = phase === "speaking";
-  const [isLoaded, setIsLoaded] = useState<boolean>(false);
-  const eyesImgRef = useRef<HTMLImageElement | null>(null);
   const didVideoRef = useRef<HTMLVideoElement | null>(null);
 
   useEffect(() => {
-    if (!ADAMS_PORTRAIT_URL) return;
-    const image = new Image();
-    image.onload = () => setIsLoaded(true);
-    image.onerror = () => setIsLoaded(true);
-    image.src = ADAMS_PORTRAIT_URL;
-  }, []);
-
-  useEffect(() => {
     const el = didVideoRef.current;
-    if (!el) return;
-    if (didStream) {
-      if (el.srcObject !== didStream) el.srcObject = didStream;
-      void el.play().catch(() => undefined);
-    } else {
-      el.srcObject = null;
-    }
-  }, [didStream]);
+    if (!el || !didStream) return;
+    if (el.srcObject !== didStream) el.srcObject = didStream;
+    void el.play().catch(() => undefined);
 
-  useEffect(() => {
-    if (!ADAMS_EYES_CLOSED_URL || didStream) return;
-    let timer = 0;
-    const blink = (): void => {
-      const el = eyesImgRef.current;
-      if (el) {
-        el.style.opacity = "1";
-        window.setTimeout(() => { if (el) el.style.opacity = "0"; }, 130);
-      }
-      timer = window.setTimeout(blink, 2800 + Math.random() * 3400);
+    return () => {
+      if (el.srcObject === didStream) el.srcObject = null;
     };
-    timer = window.setTimeout(blink, 2000);
-    return () => window.clearTimeout(timer);
   }, [didStream]);
 
   const frameClass =
@@ -55,33 +29,15 @@ function AdamsStageComponent({ phase, didStream }: AdamsStageProps) {
 
   return (
     <div className="pointer-events-none absolute inset-0 overflow-hidden bg-stage" aria-hidden="true">
-      {/* Keep the original scene as the background, but remove its Adams figure
-          completely whenever the live V2 Agent is available. */}
-      {!didStream ? (
-        <div className="absolute inset-0">
-          <img
-            src={ADAMS_PORTRAIT_URL}
-            alt=""
-            className={cn(frameClass, isLoaded ? "opacity-100" : "opacity-0")}
-            draggable={false}
-          />
-          {ADAMS_EYES_CLOSED_URL ? (
-            <img
-              ref={eyesImgRef}
-              src={ADAMS_EYES_CLOSED_URL}
-              alt=""
-              className={cn(frameClass, "opacity-0")}
-              draggable={false}
-            />
-          ) : null}
-        </div>
-      ) : (
+      {didStream ? (
         <video
           ref={didVideoRef}
           autoPlay
           playsInline
           className={cn(frameClass, "motion-fade-in")}
         />
+      ) : (
+        <div className="absolute inset-0 bg-stage" />
       )}
 
       <div className="animate-candle-flicker absolute left-[14%] top-[38%] h-[38vh] w-[38vh] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[radial-gradient(circle,hsl(38_85%_62%/0.24),transparent_65%)]" />
