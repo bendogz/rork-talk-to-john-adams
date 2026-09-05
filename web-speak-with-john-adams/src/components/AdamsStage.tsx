@@ -51,18 +51,17 @@ function AdamsStageComponent({ didStream }: AdamsStageProps) {
     const el = didVideoRef.current;
     if (!el || !stream) return;
 
-    // The WebRTC stream can contain audio from D-ID. Keep only the video track
-    // here because ElevenLabs is the sole audible voice in this app.
-    const videoOnly = new MediaStream(stream.getVideoTracks());
-    el.srcObject = videoOnly;
-    el.muted = true;
-    el.defaultMuted = true;
+    // Use the complete D-ID WebRTC stream. Its audio is the same stream that
+    // drives the presenter's mouth, so the voice and lip movement stay synced.
+    el.srcObject = stream;
+    el.muted = false;
+    el.defaultMuted = false;
+    el.volume = 1;
     el.playsInline = true;
     void el.play().catch(() => undefined);
 
     return () => {
-      if (el.srcObject === videoOnly) el.srcObject = null;
-      videoOnly.getTracks().forEach((track) => track.stop());
+      if (el.srcObject === stream) el.srcObject = null;
     };
   }, [stream]);
 
@@ -75,7 +74,6 @@ function AdamsStageComponent({ didStream }: AdamsStageProps) {
             ref={didVideoRef}
             autoPlay
             playsInline
-            muted
             className="h-full w-full object-contain object-center [transform:translateZ(0)] [backface-visibility:hidden]"
           />
         ) : null}
