@@ -13,7 +13,7 @@ export const DID_AGENT_ID =
   "v2_agt_lhKl4JJ3";
 
 // Rork can expose the browser-safe D-ID client key under any of these names.
-// The key itself must remain in Rork environment configuration, not source control.
+// The key itself remains in Rork environment configuration, not source control.
 export const DID_CLIENT_KEY =
   env.VITE_DID_CLIENT_KEY ||
   env.EXPO_PUBLIC_DID_CLIENT_KEY ||
@@ -109,7 +109,6 @@ export async function createAdamsAgentSession(callbacks: AdamsAgentCallbacks): P
 
 export async function destroyAdamsAgentSession(manager: AgentManager): Promise<void> {
   sharedUsers = Math.max(0, sharedUsers - 1);
-  subscribers.delete([...subscribers][0]);
   if (sharedUsers > 0) return;
 
   const current = sharedManager;
