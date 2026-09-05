@@ -4,10 +4,11 @@ import {
   destroyAdamsAgentSession,
   speakOnAdamsAgent,
   stopAdamsSpeech,
-  type AdamsAgentSession,
 } from "../lib/didAgent";
 import { ADAMS_GREETING_SPEECH } from "../lib/adams";
 import { askAdamsWithOpenAI } from "../lib/adamsBrain";
+
+type AdamsAgentSession = Awaited<ReturnType<typeof createAdamsAgentSession>>;
 
 export function useAdamsConversation() {
   const [isReady, setIsReady] = useState(false);
@@ -46,10 +47,6 @@ export function useAdamsConversation() {
 
       sessionRef.current = session;
 
-      // The visitor should hear John Adams introduce himself immediately after
-      // the live Agent connection is established. Play this exactly once for
-      // this conversation session, using the same single audible voice path as
-      // every later answer.
       if (!greetingPlayedRef.current) {
         greetingPlayedRef.current = true;
         setIsSpeaking(true);
@@ -70,9 +67,8 @@ export function useAdamsConversation() {
     }
   }, []);
 
-  // Pre-connect as soon as the conversation UI mounts. This keeps John Adams
-  // already present and ready to talk instead of making the visitor wait after
-  // pressing “Ready to Talk”.
+  // Pre-connect as soon as the conversation UI mounts so the visitor does not
+  // have to press “Ready to Talk” and then wait for the Agent to connect.
   useEffect(() => {
     void ensureAgent().catch(() => {
       // ensureAgent already exposes the user-facing error state.
