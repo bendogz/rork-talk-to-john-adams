@@ -1,11 +1,10 @@
-/** D-ID Agent session. */
+/** D-ID Agent session for the V2 photo/talk presenter. */
 import { createAgentManager, ConnectionState, StreamingState, type AgentManager } from "@d-id/client-sdk";
-import { ADAMS_VOICE_ID } from "@/lib/adams";
 
-/** The exact D-ID Agent selected in D-ID Studio. */
+/** The exact V2 D-ID Agent selected in D-ID Studio. */
 export const DID_AGENT_ID = import.meta.env.VITE_DID_AGENT_ID || "v2_agt_lhKl4JJ3";
-/** Prefer Vite environment configuration; the existing deployment fallback is retained. */
-export const DID_CLIENT_KEY = import.meta.env.VITE_DID_CLIENT_KEY || "ck_I_uBZ-OlQtgXzHKLqaojj";
+/** Client key must be supplied through the deployment environment, never committed to source. */
+export const DID_CLIENT_KEY = import.meta.env.VITE_DID_CLIENT_KEY || "";
 export const DID_IDLE_CLOSE_MS = 150000;
 
 export function isAgentEnabled(): boolean { return DID_AGENT_ID.length > 0 && DID_CLIENT_KEY.length > 0; }
@@ -40,19 +39,16 @@ export async function createAdamsAgentSession(callbacks: AdamsAgentCallbacks): P
   return manager;
 }
 
-/** Native microphone publishing for Expressive V4 agents. */
-export async function publishAdamsMicrophone(manager: AgentManager): Promise<MediaStream> {
-  const stream = await navigator.mediaDevices.getUserMedia({
-    audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-  });
-  await manager.publishMicrophoneStream(stream);
-  return stream;
+/**
+ * V2 does not use the Expressive V4 native microphone publishing API.
+ * The app's speech-to-text microphone remains separate from the D-ID presenter.
+ */
+export async function publishAdamsMicrophone(_manager: AgentManager): Promise<MediaStream> {
+  throw new Error("Native microphone publishing is not used by this V2 Agent.");
 }
 
-export async function unpublishAdamsMicrophone(manager: AgentManager, stream: MediaStream | null): Promise<void> {
-  try { await manager.unpublishMicrophoneStream(); } finally {
-    stream?.getTracks().forEach((track) => track.stop());
-  }
+export async function unpublishAdamsMicrophone(_manager: AgentManager, stream: MediaStream | null): Promise<void> {
+  stream?.getTracks().forEach((track) => track.stop());
 }
 
 export async function chatWithAdamsAgent(manager: AgentManager, question: string): Promise<string> {
@@ -60,24 +56,13 @@ export async function chatWithAdamsAgent(manager: AgentManager, question: string
   return response?.result ?? "";
 }
 
-/** Speech helper for expressive agents; sentiment is chosen from the text so delivery feels less robotic. */
+/** V2-compatible speech helper: use the voice configured on the D-ID Agent itself. */
 export async function speakOnAdamsAgent(manager: AgentManager, text: string): Promise<void> {
   await manager.speak({
     type: "text",
     input: text,
-    provider: { type: "elevenlabs", voice_id: ADAMS_VOICE_ID, voice_config: { stability: 0.55, similarity_boost: 0.75 } },
-    sentiment: chooseAdamsSentiment(text),
     should_queue_speaks: true,
   });
-}
-
-function chooseAdamsSentiment(text: string): string {
-  const t = text.toLowerCase();
-  if (/\b(outrage|outrageous|tyranny|injustice|absurd|foolish|shame|corrupt)\b/.test(t)) return "frustrated";
-  if (/\b(ha!|wonderful|delighted|splendid|excellent|marvelous|joy)\b/.test(t)) return "excited";
-  if (/\b(abigail|friend|dear|glad|pleasure|happy to)\b/.test(t)) return "friendly";
-  if (/\b(sorry|sorrow|suffer|grief|loss|difficult|pain)\b/.test(t)) return "empathetic";
-  return "professional";
 }
 
 export async function destroyAdamsAgentSession(manager: AgentManager): Promise<void> {
