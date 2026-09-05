@@ -33,10 +33,9 @@ interface ConversationState {
   needsPlaybackTap: boolean;
 }
 
-const WORDS_PER_SECOND_FALLBACK = 2.8;
+const WORDS_PER_SECOND_FALLBACK = 3.35;
 const CONVERSATION_KEY = "speak-with-adams.conversation.v1";
 const MAX_SAVED_EXCHANGES = 20;
-/** Guards the spoken introduction against StrictMode's double mounting. */
 let hasGreetedThisSession = false;
 
 function createId(): string {
@@ -73,17 +72,10 @@ function saveConversation(exchanges: Exchange[]): void {
 }
 
 interface UseAdamsConversationOptions {
-  /** Called when an answer finishes playing naturally — the cue to listen for a reply. */
   onAnswerComplete?: () => void;
 }
 
-/**
- * Owns the whole conversation: asking Mr. Adams, hearing him speak, and
- * revealing his words as captions in time with his voice. The thread of the
- * conversation is kept across page visits.
- */
 export function useAdamsConversation({ onAnswerComplete }: UseAdamsConversationOptions = {}) {
-  /** Latest completion callback; read at natural end so the hook contract stays stable. */
   const onAnswerCompleteRef = useRef(onAnswerComplete);
   onAnswerCompleteRef.current = onAnswerComplete;
 
@@ -103,27 +95,19 @@ export function useAdamsConversation({ onAnswerComplete }: UseAdamsConversationO
   const revealTimerRef = useRef<number | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const pendingAnswerRef = useRef<string>("");
-  /** Mirror of the exchanges, so a new question can read prior context synchronously. */
   const exchangesRef = useRef<Exchange[]>(restoredExchanges);
 
-  /** Live mouth-open level (0..1) driving the portrait's lip animation. */
   const mouthLevelRef = useRef<number>(0);
   const mouthRafRef = useRef<number | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
   const simulateTimerRef = useRef<number | null>(null);
-  /** Keeps the phone's screen awake while he speaks, so a long answer is never lost. */
   const wakeLockRef = useRef<{ release: () => Promise<void> } | null>(null);
 
-  // The living portrait: a D-ID agent stream, opened on demand and held open
-  // between answers for quick reuse.
   const agentRef = useRef<AgentManager | null>(null);
   const agentBootRef = useRef<Promise<AgentManager> | null>(null);
   const agentIdleTimerRef = useRef<number | null>(null);
-  /** Mirror of didStream, so the ask path can check his picture synchronously. */
   const didStreamRef = useRef<MediaStream | null>(null);
-  /** The agent's latest reply, captured as its spoken message lands. */
   const agentAnswerRef = useRef<string>("");
-  /** Resolved when his rendered speech finishes; swapped per answer. */
   const agentIdleResolverRef = useRef<(() => void) | null>(null);
   const [didStream, setDidStream] = useState<MediaStream | null>(null);
 
@@ -141,7 +125,6 @@ export function useAdamsConversation({ onAnswerComplete }: UseAdamsConversationO
     }
   }, []);
 
-  /** Waits for his stream to fall quiet — or gives up at the cap. */
   const waitForAgentIdle = useCallback((capMs: number): Promise<void> => {
     return new Promise((resolve) => {
       let settled = false;
@@ -157,7 +140,6 @@ export function useAdamsConversation({ onAnswerComplete }: UseAdamsConversationO
     });
   }, []);
 
-  /** Closes the living portrait, so no studio minutes are spent while he listens. */
   const destroyAgent = useCallback((): void => {
     clearAgentIdleTimer();
     const manager = agentRef.current;
@@ -263,13 +245,10 @@ export function useAdamsConversation({ onAnswerComplete }: UseAdamsConversationO
     };
   }, [clearRevealTimer, destroyAgent, releaseAudio]);
 
-  // Keep the thread of conversation, so a visitor returning to the page resumes it.
-  // The spoken introduction carries no question, so it is not kept.
   useEffect(() => {
     saveConversation(state.exchanges.filter((exchange) => exchange.question.length > 0));
   }, [state.exchanges]);
 
-  /** Feeds the mouth level from the actual speech audio, so lips match the voice. */
   const attachMouthAnalyser = useCallback((audio: HTMLAudioElement): void => {
     try {
       const AudioCtx =
@@ -297,7 +276,6 @@ export function useAdamsConversation({ onAnswerComplete }: UseAdamsConversationO
         }
         const rms = Math.sqrt(sum / data.length);
         const target = Math.min(1, rms * 3.4);
-        // Attack fast, release slowly, so the mouth reads as deliberate speech.
         mouthLevelRef.current = target > mouthLevelRef.current ? target : mouthLevelRef.current * 0.8;
         mouthRafRef.current = requestAnimationFrame(tick);
       };
@@ -307,7 +285,6 @@ export function useAdamsConversation({ onAnswerComplete }: UseAdamsConversationO
     }
   }, []);
 
-  /** Fallback when real audio cannot play: pulse the mouth against the captions. */
   const startSimulatedMouth = useCallback((): void => {
     if (simulateTimerRef.current !== null) return;
     simulateTimerRef.current = window.setInterval(() => {
@@ -317,7 +294,6 @@ export function useAdamsConversation({ onAnswerComplete }: UseAdamsConversationO
     }, 95);
   }, []);
 
-  /** Reveals the answer word by word across `durationSeconds`. */
   const startReveal = useCallback(
     (answer: string, durationSeconds: number): void => {
       clearRevealTimer();
@@ -325,7 +301,7 @@ export function useAdamsConversation({ onAnswerComplete }: UseAdamsConversationO
       if (words.length === 0) return;
 
       const safeDuration = Number.isFinite(durationSeconds) && durationSeconds > 0.5 ? durationSeconds : words.length / WORDS_PER_SECOND_FALLBACK;
-      const stepMs = Math.max(45, (safeDuration * 1000) / words.length);
+      const stepMs = Math.max(40, (safeDuration * 1000) / words.length);
       let shown = 0;
 
       revealTimerRef.current = window.setInterval(() => {
@@ -353,7 +329,6 @@ export function useAdamsConversation({ onAnswerComplete }: UseAdamsConversationO
     async (url: string, answer: string): Promise<void> => {
       const audio = new Audio(url);
       audio.preload = "auto";
-      // iOS needs playsinline for long-form playback without interruption.
       audio.setAttribute("playsinline", "true");
       audioRef.current = audio;
       objectUrlRef.current = url;
@@ -370,7 +345,6 @@ export function useAdamsConversation({ onAnswerComplete }: UseAdamsConversationO
           void audioCtxRef.current.resume().catch(() => undefined);
         }
       };
-      // A mobile interruption (a call, an app switch) pauses mid-sentence — quietly resume.
       audio.onpause = () => {
         if (audio.ended || resumeAttempts >= 4) return;
         resumeAttempts += 1;
@@ -383,11 +357,8 @@ export function useAdamsConversation({ onAnswerComplete }: UseAdamsConversationO
       };
 
       const beginReveal = (): void => startReveal(answer, audio.duration);
-      if (Number.isFinite(audio.duration) && audio.duration > 0) {
-        beginReveal();
-      } else {
-        audio.onloadedmetadata = beginReveal;
-      }
+      if (Number.isFinite(audio.duration) && audio.duration > 0) beginReveal();
+      else audio.onloadedmetadata = beginReveal;
 
       attachMouthAnalyser(audio);
 
@@ -403,7 +374,6 @@ export function useAdamsConversation({ onAnswerComplete }: UseAdamsConversationO
     [acquireWakeLock, attachMouthAnalyser, finishSpeaking, startReveal, startSimulatedMouth],
   );
 
-  /** Retries playback after the browser blocked it without a gesture. */
   const retryPlayback = useCallback((): void => {
     const audio = audioRef.current;
     if (!audio) return;
@@ -424,11 +394,8 @@ export function useAdamsConversation({ onAnswerComplete }: UseAdamsConversationO
     finishSpeaking();
   }, [destroyAgent, finishSpeaking]);
 
-  /** Has his reply spoken — as a living, lip-synced portrait when D-ID is at
-   * hand, and otherwise as voice alone — captions keeping pace throughout. */
   const speakAndPlay = useCallback(
     async (answer: string, signal: AbortSignal): Promise<void> => {
-      // The living portrait: real lips forming his words over WebRTC.
       if (isAgentEnabled()) {
         try {
           const manager = await ensureAgent();
@@ -438,11 +405,9 @@ export function useAdamsConversation({ onAnswerComplete }: UseAdamsConversationO
           for (const chunk of chunks) {
             if (signal.aborted) return;
             await speakOnAdamsAgent(manager, chunk);
-            // A small buffer after the estimate keeps chunks from colliding,
-            // which is what made his voice catch and turn synthetic.
-            await agentSleep(estimateSpeechSeconds(chunk) * 1000 + 400);
+            // Minimal handoff buffer; the old 400ms+ pauses made answers feel segmented.
+            await agentSleep(100);
           }
-          await agentSleep(1000);
           if (signal.aborted) return;
           finishSpeaking();
           onAnswerCompleteRef.current?.();
@@ -456,8 +421,6 @@ export function useAdamsConversation({ onAnswerComplete }: UseAdamsConversationO
 
       try {
         const voiceSettings = getSettings();
-        // His voice: the visitor's own ElevenLabs account first, their OpenAI
-        // key second, the house post only when neither is entrusted.
         const url =
           voiceSettings.elevenlabsKey && voiceSettings.ttsProvider === "elevenlabs"
             ? await speakWithElevenLabs(answer, { signal })
@@ -477,13 +440,12 @@ export function useAdamsConversation({ onAnswerComplete }: UseAdamsConversationO
         window.setTimeout(() => {
           finishSpeaking();
           onAnswerCompleteRef.current?.();
-        }, Math.max(2600, answer.split(/\s+/).length * 380));
+        }, Math.max(2200, answer.split(/\s+/).length * 300));
       }
     },
     [destroyAgent, ensureAgent, finishSpeaking, playAudio, startReveal, startSimulatedMouth],
   );
 
-  // A first visit earns a spoken introduction: who he is, and a curiosity.
   useEffect(() => {
     if (hasGreetedThisSession) return;
     hasGreetedThisSession = true;
@@ -506,8 +468,7 @@ export function useAdamsConversation({ onAnswerComplete }: UseAdamsConversationO
     void speakAndPlay(greeting.answer, controller.signal);
   }, [restoredExchanges, speakAndPlay]);
 
-  // Warm the living portrait as the page loads, so the first answer starts the
-  // moment it is thought of — no dead wait while the stream negotiates.
+  // Keep the exact Studio Agent warmed before the first question.
   useEffect(() => {
     if (!isAgentEnabled()) return;
     void ensureAgent().catch(() => undefined);
@@ -534,24 +495,20 @@ export function useAdamsConversation({ onAnswerComplete }: UseAdamsConversationO
         needsPlaybackTap: false,
       }));
 
-      // The agent's own mind first: he listens, considers, and speaks through
-      // the living portrait. The house pipeline stands in when the agent cannot.
       if (isAgentEnabled()) {
         try {
           agentAnswerRef.current = "";
           const manager = await ensureAgent();
-          // His picture first: without the stream he would answer as bare text
-          // while his voice plays into a dead feed. A few seconds of grace,
-          // then the house pipeline takes the question instead.
+          // Warmup normally supplies this before a question. Keep the safety
+          // window short so a missing stream never creates a long dead pause.
           let waitedMs = 0;
-          while (!didStreamRef.current && waitedMs < 6000) {
+          while (!didStreamRef.current && waitedMs < 2000) {
             if (controller.signal.aborted) return;
-            await agentSleep(250);
-            waitedMs += 250;
+            await agentSleep(100);
+            waitedMs += 100;
           }
-          if (!didStreamRef.current) {
-            throw new Error("the living portrait never showed its face");
-          }
+          if (!didStreamRef.current) throw new Error("the living portrait never showed its face");
+
           const replied = await chatWithAdamsAgent(manager, question);
           if (controller.signal.aborted) return;
           const answer = replied || agentAnswerRef.current;
@@ -568,10 +525,9 @@ export function useAdamsConversation({ onAnswerComplete }: UseAdamsConversationO
               error: null,
               needsPlaybackTap: false,
             }));
-            // Captions keep pace with the rendered voice; the seal opens when
-            // his stream actually falls quiet — the cap is only a safety net.
             startReveal(answer, estimateSpeechSeconds(answer));
-            await waitForAgentIdle(estimateSpeechSeconds(answer) * 1000 + 1500);
+            // Resolve from D-ID's real idle event; only a compact safety cap remains.
+            await waitForAgentIdle(Math.max(2500, estimateSpeechSeconds(answer) * 1000 + 500));
             if (controller.signal.aborted) return;
             finishSpeaking();
             onAnswerCompleteRef.current?.();
@@ -586,7 +542,6 @@ export function useAdamsConversation({ onAnswerComplete }: UseAdamsConversationO
       }
 
       try {
-        // The greeting carries no question, so it is not offered as context.
         const history: ChatTurn[] = exchangesRef.current
           .filter((exchange) => exchange.question.length > 0)
           .flatMap((exchange) => [
@@ -594,14 +549,12 @@ export function useAdamsConversation({ onAnswerComplete }: UseAdamsConversationO
             { role: "assistant" as const, content: exchange.answer },
           ]);
 
-        // His mind: the visitor's own OpenAI key when entrusted, the house post otherwise.
         const askMind = getSettings().openaiKey ? askAdamsWithOpenAI : askAdams;
         const answer = await askMind(question, history, controller.signal);
         if (controller.signal.aborted) return;
 
         pendingAnswerRef.current = answer;
         const exchange: Exchange = { id: createId(), question, answer };
-
         exchangesRef.current = [...exchangesRef.current, exchange];
 
         setState((prev) => {
