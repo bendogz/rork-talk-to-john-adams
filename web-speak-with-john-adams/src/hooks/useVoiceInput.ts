@@ -19,7 +19,10 @@ interface UseVoiceInputResult {
 
 const SPEECH_RMS = 0.022;
 const SILENCE_RMS = 0.013;
-const SILENCE_MS = 900;
+// Give the visitor a full two seconds of silence before sending the question.
+// This makes short pauses and incidental background sounds much less likely to
+// become an accidental turn.
+const SILENCE_MS = 2000;
 const MAX_RECORDING_MS = 22000;
 const NO_SPEECH_MS = 12000;
 const POLL_MS = 80;
@@ -253,7 +256,7 @@ export function useVoiceInput(onTranscript: (text: string) => void): UseVoiceInp
       statusRef.current = nextStatus;
     } catch (error) {
       console.error("[adams] microphone monitor unavailable", error);
-      stream?.getTracks().forEach((track) => track.stop());
+      streamRef.current?.getTracks().forEach((track) => track.stop());
       streamRef.current = null;
       setError("The microphone could not be kept open in this browser.");
     } finally {
