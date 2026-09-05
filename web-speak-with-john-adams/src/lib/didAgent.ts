@@ -1,9 +1,10 @@
-/** D-ID V4 Expressive Agent session. */
+/** D-ID Agent session. */
 import { createAgentManager, ConnectionState, StreamingState, type AgentManager } from "@d-id/client-sdk";
 import { ADAMS_VOICE_ID } from "@/lib/adams";
 
-/** These can be overridden by Vite environment variables after the real V4 agent is created. */
-export const DID_AGENT_ID = import.meta.env.VITE_DID_AGENT_ID || "v2_agt_qstKVH90";
+/** The exact D-ID Agent selected in D-ID Studio. */
+export const DID_AGENT_ID = import.meta.env.VITE_DID_AGENT_ID || "v2_agt_lhKl4JJ3";
+/** Prefer Vite environment configuration; the existing deployment fallback is retained. */
 export const DID_CLIENT_KEY = import.meta.env.VITE_DID_CLIENT_KEY || "ck_I_uBZ-OlQtgXzHKLqaojj";
 export const DID_IDLE_CLOSE_MS = 150000;
 
@@ -19,7 +20,6 @@ export interface AdamsAgentCallbacks {
 export async function createAdamsAgentSession(callbacks: AdamsAgentCallbacks): Promise<AgentManager> {
   const manager = await createAgentManager(DID_AGENT_ID, {
     auth: { type: "key", clientKey: DID_CLIENT_KEY },
-    // V4 Expressive transport/fluent settings are managed by D-ID automatically.
     callbacks: {
       onSrcObjectReady: (stream) => callbacks.onStream(stream),
       onVideoStateChange: (state) => { if (state === StreamingState.Stop) callbacks.onIdle?.(); },
@@ -40,7 +40,7 @@ export async function createAdamsAgentSession(callbacks: AdamsAgentCallbacks): P
   return manager;
 }
 
-/** Native microphone publishing for true V4 Expressive agents. */
+/** Native microphone publishing for Expressive V4 agents. */
 export async function publishAdamsMicrophone(manager: AgentManager): Promise<MediaStream> {
   const stream = await navigator.mediaDevices.getUserMedia({
     audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
@@ -60,7 +60,7 @@ export async function chatWithAdamsAgent(manager: AgentManager, question: string
   return response?.result ?? "";
 }
 
-/** V4 Expressive speech: preserve the established Adams voice and add contextual delivery. */
+/** Speech helper for expressive agents; sentiment is chosen from the text so delivery feels less robotic. */
 export async function speakOnAdamsAgent(manager: AgentManager, text: string): Promise<void> {
   await manager.speak({
     type: "text",
