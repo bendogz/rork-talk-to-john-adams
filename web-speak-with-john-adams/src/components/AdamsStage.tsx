@@ -11,16 +11,12 @@ interface AdamsStageProps {
 
 function AdamsStageComponent({ didStream }: AdamsStageProps) {
   const didVideoRef = useRef<HTMLVideoElement | null>(null);
-  const [liveStream, setLiveStream] = useState<MediaStream | null>(didStream ?? null);
   const stageManagerRef = useRef<Awaited<ReturnType<typeof createAdamsAgentSession>> | null>(null);
+  const [liveStream, setLiveStream] = useState<MediaStream | null>(didStream ?? null);
 
-  // Open the D-ID Agent as soon as the page loads. Previously the presenter was
-  // only opened after a question, which left the frame completely empty on load.
+  // The stage owns a subscriber to the shared D-ID session so the exact Agent
+  // is connected immediately and remains visible before the first question.
   useEffect(() => {
-    if (didStream) {
-      setLiveStream(didStream);
-      return;
-    }
     if (!isAgentEnabled()) return;
 
     let cancelled = false;
@@ -43,6 +39,10 @@ function AdamsStageComponent({ didStream }: AdamsStageProps) {
       stageManagerRef.current = null;
       if (manager) void destroyAdamsAgentSession(manager);
     };
+  }, []);
+
+  useEffect(() => {
+    if (didStream) setLiveStream(didStream);
   }, [didStream]);
 
   const stream = didStream ?? liveStream;
@@ -50,7 +50,7 @@ function AdamsStageComponent({ didStream }: AdamsStageProps) {
   useEffect(() => {
     const el = didVideoRef.current;
     if (!el || !stream) return;
-    el.srcObject = stream;
+    if (el.srcObject !== stream) el.srcObject = stream;
     void el.play().catch(() => undefined);
     return () => { if (el.srcObject === stream) el.srcObject = null; };
   }, [stream]);
