@@ -5,15 +5,12 @@ import { getSettings } from "@/lib/settings";
 
 const env = import.meta.env as Record<string, string | undefined>;
 
-// Exact D-ID Studio V2 Agent used by the app.
 export const DID_AGENT_ID =
   env.VITE_DID_AGENT_ID ||
   env.EXPO_PUBLIC_DID_AGENT_ID ||
   env.DID_AGENT_ID ||
   "v2_agt_lhKl4JJ3";
 
-// Rork can expose the browser-safe D-ID client key under any of these names.
-// The key itself remains in Rork environment configuration, not source control.
 export const DID_CLIENT_KEY =
   env.VITE_DID_CLIENT_KEY ||
   env.EXPO_PUBLIC_DID_CLIENT_KEY ||
@@ -35,7 +32,7 @@ export interface AdamsAgentCallbacks {
   onFail: (message: string) => void;
 }
 
-// The stage and conversation share one D-ID WebRTC session.
+// One shared WebRTC session prevents duplicate presenters and stream swapping.
 let sharedManager: AgentManager | null = null;
 let sharedBoot: Promise<AgentManager> | null = null;
 let sharedStream: MediaStream | null = null;
@@ -56,10 +53,12 @@ export async function createAdamsAgentSession(callbacks: AdamsAgentCallbacks): P
 
   sharedBoot = createAgentManager(DID_AGENT_ID, {
     auth: { type: "key", clientKey: DID_CLIENT_KEY },
+    // D-ID recommends VP8 for V2/V3 compatibility. 1080 improves clarity on
+    // retina/desktop displays while warmup keeps the presenter visible early.
     streamOptions: {
-      compatibilityMode: "auto",
+      compatibilityMode: "on",
       streamWarmup: true,
-      outputResolution: 720,
+      outputResolution: 1080,
     },
     callbacks: {
       onSrcObjectReady: (stream) => {
@@ -174,11 +173,12 @@ export async function speakOnAdamsAgent(manager: AgentManager, text: string): Pr
 }
 
 export function estimateSpeechSeconds(text: string): number {
-  return Math.max(1.2, text.split(/\s+/).filter(Boolean).length / 2.8);
+  return Math.max(0.9, text.split(/\s+/).filter(Boolean).length / 3.35);
 }
 
 export function chunkAnswer(text: string): string[] {
-  const max = 500;
+  // Fewer, larger chunks avoids visible/voice resets between sentences.
+  const max = 900;
   const sentences = text.match(/[^.!?\n]+[.!?]*["'”’)]*\s*|\S+$/g) ?? [text];
   const chunks: string[] = [];
   let current = "";
