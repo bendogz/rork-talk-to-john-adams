@@ -1,371 +1,130 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-
-import { ADAMS_GREETING_SPEECH, type ChatTurn, type Exchange } from "@/lib/adams";
-import type { AgentManager } from "@d-id/client-sdk";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   createAdamsAgentSession,
   destroyAdamsAgentSession,
-  DID_IDLE_CLOSE_MS,
-  estimateSpeechSeconds,
-  isAgentEnabled,
   speakOnAdamsAgent,
   stopAdamsSpeech,
-  type AdamsAgentCallbacks,
-} from "@/lib/didAgent";
-import { ElevenLabsError, speakWithElevenLabs } from "@/lib/elevenlabs";
-import { askAdamsWithOpenAI, OpenAIError, speakAsAdamsWithOpenAI } from "@/lib/openai";
-import { getSettings } from "@/lib/settings";
-import { askAdams, speakAsAdams, ToolkitError } from "@/lib/toolkit";
+  type AdamsAgentSession,
+} from "../lib/didAgent";
+import { askAdamsWithOpenAI } from "../lib/adamsBrain";
 
-export type StagePhase = "welcome" | "considering" | "speaking" | "resting";
-
-interface ConversationState {
-  phase: StagePhase;
-  exchanges: Exchange[];
-  viewIndex: number;
-  revealedAnswer: string;
-  error: string | null;
-  needsPlaybackTap: boolean;
-}
-
-const WORDS_PER_SECOND = 3.35;
-const CONVERSATION_KEY = "speak-with-adams.conversation.v1";
-const MAX_SAVED_EXCHANGES = 20;
-let hasGreetedThisSession = false;
-
-function createId(): string {
-  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-}
-
-function loadSavedConversation(): Exchange[] {
-  try {
-    const raw = window.localStorage.getItem(CONVERSATION_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw) as unknown;
-    if (!Array.isArray(parsed)) return [];
-    return parsed.filter(
-      (item): item is Exchange =>
-        typeof item === "object" && item !== null &&
-        typeof (item as Exchange).id === "string" &&
-        typeof (item as Exchange).question === "string" &&
-        typeof (item as Exchange).answer === "string",
-    ).slice(-MAX_SAVED_EXCHANGES);
-  } catch {
-    return [];
-  }
-}
-
-function saveConversation(exchanges: Exchange[]): void {
-  try {
-    window.localStorage.setItem(CONVERSATION_KEY, JSON.stringify(exchanges.slice(-MAX_SAVED_EXCHANGES)));
-  } catch (error) {
-    console.warn("[adams] conversation could not be kept", error);
-  }
-}
-
-interface UseAdamsConversationOptions {
-  onAnswerComplete?: () => void;
-}
-
-export function useAdamsConversation({ onAnswerComplete }: UseAdamsConversationOptions = {}) {
-  const onAnswerCompleteRef = useRef(onAnswerComplete);
-  onAnswerCompleteRef.current = onAnswerComplete;
-
-  const restoredExchanges = useMemo(() => loadSavedConversation(), []);
-  const [state, setState] = useState<ConversationState>(() => ({
-    phase: restoredExchanges.length > 0 ? "resting" : "welcome",
-    exchanges: restoredExchanges,
-    viewIndex: restoredExchanges.length - 1,
-    revealedAnswer: restoredExchanges.length > 0 ? restoredExchanges[restoredExchanges.length - 1].answer : "",
-    error: null,
-    needsPlaybackTap: false,
-  }));
-
+export function useAdamsConversation() {
+  const [isReady, setIsReady] = useState(false);
+  const [isConnecting, setIsConnecting] = useState(false);
+  const [isThinking, setIsThinking] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const sessionRef = useRef<AdamsAgentSession | null>(null);
   const abortRef = useRef<AbortController | null>(null);
-  const pendingAnswerRef = useRef("");
-  const exchangesRef = useRef<Exchange[]>(restoredExchanges);
-  const revealTimerRef = useRef<number | null>(null);
-  const agentRef = useRef<AgentManager | null>(null);
-  const agentBootRef = useRef<Promise<AgentManager> | null>(null);
-  const agentIdleTimerRef = useRef<number | null>(null);
-  const didStreamRef = useRef<MediaStream | null>(null);
-  const [didStream, setDidStream] = useState<MediaStream | null>(null);
-  const mouthLevelRef = useRef(0);
-  const requestIdRef = useRef(0);
 
-  const clearRevealTimer = useCallback(() => {
-    if (revealTimerRef.current !== null) {
-      window.clearInterval(revealTimerRef.current);
-      revealTimerRef.current = null;
-    }
-  }, []);
+  const ensureAgent = useCallback(async () => {
+    if (sessionRef.current) return sessionRef.current;
 
-  const clearAgentIdleTimer = useCallback(() => {
-    if (agentIdleTimerRef.current !== null) {
-      window.clearTimeout(agentIdleTimerRef.current);
-      agentIdleTimerRef.current = null;
-    }
-  }, []);
+    setError(null);
+    setIsConnecting(true);
 
-  const destroyAgent = useCallback(() => {
-    clearAgentIdleTimer();
-    stopAdamsSpeech();
-    const manager = agentRef.current;
-    agentRef.current = null;
-    agentBootRef.current = null;
-    didStreamRef.current = null;
-    setDidStream(null);
-    if (manager) void destroyAdamsAgentSession(manager);
-  }, [clearAgentIdleTimer]);
-
-  const scheduleAgentIdleClose = useCallback(() => {
-    clearAgentIdleTimer();
-    agentIdleTimerRef.current = window.setTimeout(destroyAgent, DID_IDLE_CLOSE_MS);
-  }, [clearAgentIdleTimer, destroyAgent]);
-
-  const ensureAgent = useCallback(async (): Promise<AgentManager> => {
-    scheduleAgentIdleClose();
-    if (agentRef.current) return agentRef.current;
-    if (agentBootRef.current) return agentBootRef.current;
-
-    const callbacks: AdamsAgentCallbacks = {
-      onStream: (stream) => {
-        didStreamRef.current = stream;
-        setDidStream(stream);
-      },
-      onFail: (message) => console.warn("[adams] live presenter", message),
-      onIdle: () => undefined,
-    };
-
-    const boot = createAdamsAgentSession(callbacks)
-      .then((manager) => {
-        agentRef.current = manager;
-        agentBootRef.current = null;
-        return manager;
-      })
-      .catch((error: unknown) => {
-        agentBootRef.current = null;
-        throw error;
+    try {
+      const session = await createAdamsAgentSession({
+        onConnected: () => {
+          setIsReady(true);
+          setIsConnecting(false);
+        },
+        onDisconnected: () => {
+          setIsReady(false);
+          setIsConnecting(false);
+        },
+        onError: (message) => {
+          setError(message);
+          setIsReady(false);
+          setIsConnecting(false);
+        },
+        onSpeakingChange: setIsSpeaking,
       });
 
-    agentBootRef.current = boot;
-    return boot;
-  }, [scheduleAgentIdleClose]);
+      sessionRef.current = session;
+      return session;
+    } catch (err) {
+      setIsConnecting(false);
+      setIsReady(false);
+      setError(err instanceof Error ? err.message : "Unable to connect to John Adams.");
+      throw err;
+    }
+  }, []);
 
-  const startReveal = useCallback((answer: string, durationSeconds: number) => {
-    clearRevealTimer();
-    const words = answer.split(/\s+/).filter(Boolean);
-    if (!words.length) return;
-    const duration = Number.isFinite(durationSeconds) && durationSeconds > 0.5
-      ? durationSeconds
-      : words.length / WORDS_PER_SECOND;
-    const stepMs = Math.max(35, (duration * 1000) / words.length);
-    let shown = 0;
-    revealTimerRef.current = window.setInterval(() => {
-      shown += 1;
-      setState((prev) => ({ ...prev, revealedAnswer: words.slice(0, shown).join(" ") }));
-      if (shown >= words.length) clearRevealTimer();
-    }, stepMs);
-  }, [clearRevealTimer]);
+  // Deliberately do NOT connect on page load. The D-ID Agent is warmed up only
+  // when the visitor presses “Ready to Talk”, so the expensive WebRTC connection
+  // happens at the moment the conversation is actually started.
+  const startConversation = useCallback(async () => {
+    setError(null);
+    try {
+      await ensureAgent();
+    } catch {
+      // ensureAgent already exposes the user-facing error state.
+    }
+  }, [ensureAgent]);
 
-  const finishSpeaking = useCallback(() => {
-    clearRevealTimer();
-    setState((prev) => ({
-      ...prev,
-      phase: prev.exchanges.length > 0 ? "resting" : "welcome",
-      revealedAnswer: pendingAnswerRef.current,
-      needsPlaybackTap: false,
-    }));
-  }, [clearRevealTimer]);
+  const askQuestion = useCallback(
+    async (question: string) => {
+      if (!question.trim()) return;
+
+      setError(null);
+      setIsThinking(true);
+      abortRef.current?.abort();
+      const controller = new AbortController();
+      abortRef.current = controller;
+
+      try {
+        await ensureAgent();
+        const answer = await askAdamsWithOpenAI(question, controller.signal);
+        if (controller.signal.aborted) return;
+
+        setIsThinking(false);
+        setIsSpeaking(true);
+        try {
+          await speakOnAdamsAgent(answer);
+        } finally {
+          setIsSpeaking(false);
+        }
+      } catch (err) {
+        if (!controller.signal.aborted) {
+          setError(err instanceof Error ? err.message : "Something went wrong.");
+          setIsThinking(false);
+          setIsSpeaking(false);
+        }
+      } finally {
+        if (abortRef.current === controller) abortRef.current = null;
+      }
+    },
+    [ensureAgent]
+  );
+
+  const stopConversation = useCallback(() => {
+    abortRef.current?.abort();
+    abortRef.current = null;
+    stopAdamsSpeech();
+    setIsThinking(false);
+    setIsSpeaking(false);
+  }, []);
 
   useEffect(() => {
     return () => {
-      clearRevealTimer();
       abortRef.current?.abort();
       stopAdamsSpeech();
-      destroyAgent();
+      if (sessionRef.current) {
+        destroyAdamsAgentSession(sessionRef.current);
+        sessionRef.current = null;
+      }
     };
-  }, [clearRevealTimer, destroyAgent]);
-
-  useEffect(() => {
-    saveConversation(state.exchanges.filter((exchange) => exchange.question.length > 0));
-  }, [state.exchanges]);
-
-  // Warm the one shared D-ID session while the page is idle.
-  useEffect(() => {
-    if (!isAgentEnabled()) return;
-    void ensureAgent().catch(() => undefined);
-  }, [ensureAgent]);
-
-  const speakAnswer = useCallback(async (answer: string, signal: AbortSignal): Promise<void> => {
-    if (signal.aborted) return;
-
-    if (isAgentEnabled()) {
-      const manager = await ensureAgent();
-      if (signal.aborted) return;
-      startReveal(answer, estimateSpeechSeconds(answer));
-      await speakOnAdamsAgent(manager, answer);
-      if (signal.aborted) return;
-      finishSpeaking();
-      onAnswerCompleteRef.current?.();
-      return;
-    }
-
-    const settings = getSettings();
-    const url =
-      settings.elevenlabsKey && settings.ttsProvider === "elevenlabs"
-        ? await speakWithElevenLabs(answer, { signal })
-        : settings.openaiKey && settings.ttsProvider === "openai"
-          ? await speakAsAdamsWithOpenAI(answer, signal)
-          : await speakAsAdams(answer, signal);
-
-    if (signal.aborted) {
-      URL.revokeObjectURL(url);
-      return;
-    }
-
-    const audio = new Audio(url);
-    audio.preload = "auto";
-    audio.setAttribute("playsinline", "true");
-    startReveal(answer, estimateSpeechSeconds(answer));
-    try {
-      await audio.play();
-      await new Promise<void>((resolve, reject) => {
-        audio.onended = resolve;
-        audio.onerror = () => reject(new Error("Speech playback failed."));
-      });
-    } finally {
-      audio.pause();
-      URL.revokeObjectURL(url);
-    }
-    if (!signal.aborted) {
-      finishSpeaking();
-      onAnswerCompleteRef.current?.();
-    }
-  }, [ensureAgent, finishSpeaking, startReveal]);
-
-  useEffect(() => {
-    if (hasGreetedThisSession || restoredExchanges.length > 0) return;
-    hasGreetedThisSession = true;
-    const greeting: Exchange = { id: createId(), question: "", answer: ADAMS_GREETING_SPEECH };
-    pendingAnswerRef.current = greeting.answer;
-    exchangesRef.current = [greeting];
-    const controller = new AbortController();
-    abortRef.current = controller;
-    setState((prev) => ({ ...prev, phase: "speaking", exchanges: [greeting], viewIndex: 0, revealedAnswer: "" }));
-    void speakAnswer(greeting.answer, controller.signal).catch((error) => console.warn("[adams] greeting failed", error));
-  }, [restoredExchanges, speakAnswer]);
-
-  const ask = useCallback(async (rawQuestion: string): Promise<void> => {
-    const question = rawQuestion.trim();
-    if (!question) return;
-
-    const requestId = ++requestIdRef.current;
-    abortRef.current?.abort();
-    stopAdamsSpeech();
-    clearRevealTimer();
-    const controller = new AbortController();
-    abortRef.current = controller;
-    pendingAnswerRef.current = "";
-
-    setState((prev) => ({ ...prev, phase: "considering", error: null, revealedAnswer: "", needsPlaybackTap: false }));
-
-    try {
-      // Exactly one mind answers each question. The D-ID V2 Agent is the
-      // presenter only; asking it for a second answer caused competing voices.
-      const history: ChatTurn[] = exchangesRef.current
-        .filter((exchange) => exchange.question.length > 0)
-        .flatMap((exchange) => [
-          { role: "user" as const, content: exchange.question },
-          { role: "assistant" as const, content: exchange.answer },
-        ]);
-      const settings = getSettings();
-      const answer = settings.openaiKey
-        ? await askAdamsWithOpenAI(question, history, controller.signal)
-        : await askAdams(question, history, controller.signal);
-
-      if (controller.signal.aborted || requestId !== requestIdRef.current) return;
-
-      const exchange: Exchange = { id: createId(), question, answer };
-      pendingAnswerRef.current = answer;
-      exchangesRef.current = [...exchangesRef.current, exchange];
-      setState((prev) => ({
-        ...prev,
-        phase: "speaking",
-        exchanges: [...prev.exchanges, exchange],
-        viewIndex: prev.exchanges.length,
-        revealedAnswer: "",
-        error: null,
-      }));
-
-      await speakAnswer(answer, controller.signal);
-    } catch (error) {
-      if (controller.signal.aborted || requestId !== requestIdRef.current) return;
-      const message =
-        error instanceof ToolkitError || error instanceof OpenAIError || error instanceof ElevenLabsError
-          ? error.message
-          : "Something went awry. Try once more.";
-      console.error("[adams] question failed", error);
-      setState((prev) => ({
-        ...prev,
-        phase: prev.exchanges.length > 0 ? "resting" : "welcome",
-        error: message,
-      }));
-    }
-  }, [clearRevealTimer, speakAnswer]);
-
-  const stopSpeaking = useCallback(() => {
-    requestIdRef.current += 1;
-    abortRef.current?.abort();
-    stopAdamsSpeech();
-    destroyAgent();
-    finishSpeaking();
-  }, [destroyAgent, finishSpeaking]);
-
-  const retryPlayback = useCallback(() => {
-    setState((prev) => ({ ...prev, needsPlaybackTap: false }));
   }, []);
-
-  const showPrevious = useCallback(() => {
-    setState((prev) => {
-      if (prev.viewIndex <= 0) return prev;
-      const index = prev.viewIndex - 1;
-      return { ...prev, viewIndex: index, revealedAnswer: prev.exchanges[index].answer };
-    });
-  }, []);
-
-  const showNext = useCallback(() => {
-    setState((prev) => {
-      if (prev.viewIndex >= prev.exchanges.length - 1) return prev;
-      const index = prev.viewIndex + 1;
-      return { ...prev, viewIndex: index, revealedAnswer: prev.exchanges[index].answer };
-    });
-  }, []);
-
-  const dismissError = useCallback(() => {
-    setState((prev) => ({ ...prev, error: null }));
-  }, []);
-
-  const currentExchange = useMemo<Exchange | null>(() => {
-    if (state.viewIndex < 0 || state.viewIndex >= state.exchanges.length) return null;
-    return state.exchanges[state.viewIndex];
-  }, [state.exchanges, state.viewIndex]);
 
   return {
-    phase: state.phase,
-    didStream,
-    exchanges: state.exchanges,
-    currentExchange,
-    viewIndex: state.viewIndex,
-    revealedAnswer: state.revealedAnswer,
-    error: state.error,
-    needsPlaybackTap: state.needsPlaybackTap,
-    mouthLevelRef,
-    ask,
-    stopSpeaking,
-    retryPlayback,
-    showPrevious,
-    showNext,
-    dismissError,
+    isReady,
+    isConnecting,
+    isThinking,
+    isSpeaking,
+    error,
+    startConversation,
+    askQuestion,
+    stopConversation,
   };
 }
