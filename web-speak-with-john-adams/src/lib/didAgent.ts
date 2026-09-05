@@ -1,7 +1,5 @@
 /** D-ID Agent session for the V2 photo/talk presenter. */
 import { createAgentManager, ConnectionState, StreamingState, type AgentManager } from "@d-id/client-sdk";
-import { speakWithElevenLabs } from "@/lib/elevenlabs";
-import { getSettings } from "@/lib/settings";
 
 const env = import.meta.env as Record<string, string | undefined>;
 
@@ -37,8 +35,6 @@ let sharedBoot: Promise<AgentManager> | null = null;
 let sharedStream: MediaStream | null = null;
 let sharedUsers = 0;
 const subscribers = new Set<AdamsAgentCallbacks>();
-let activeLocalAudio: HTMLAudioElement | null = null;
-let speechGeneration = 0;
 
 export async function createAdamsAgentSession(callbacks: AdamsAgentCallbacks): Promise<AgentManager> {
   if (!isAgentEnabled()) throw new Error("D-ID Agent configuration is missing.");
@@ -111,7 +107,6 @@ export async function destroyAdamsAgentSession(manager: AgentManager): Promise<v
   sharedManager = null;
   sharedStream = null;
   subscribers.clear();
-  stopAdamsSpeech();
 
   if (current) {
     try { await current.disconnect(); } catch (e) { console.warn("[adams] session cleanup failed", e); }
@@ -133,58 +128,23 @@ export async function chatWithAdamsAgent(manager: AgentManager, question: string
   return response?.result ?? "";
 }
 
-/** Stop every locally audible speech source before another answer begins. */
-export function stopAdamsSpeech(): void {
-  speechGeneration += 1;
-  const audio = activeLocalAudio;
-  activeLocalAudio = null;
-  if (audio) {
-    audio.pause();
-    audio.currentTime = 0;
-  }
-}
-
 /**
- * One speech source only: ElevenLabs is audible; D-ID supplies the live
- * presenter/lip animation. The D-ID spoken queue is disabled and each call
- * invalidates the preceding local audio instance.
+ * Speak through D-ID itself so the WebRTC audio and talking-face video are one
+ * synchronized stream. Do not play a separate ElevenLabs HTMLAudioElement:
+ * that makes the face appear muted or looped while another voice talks.
+ * The voice configured on the D-ID Studio Agent is therefore the only voice.
  */
 export async function speakOnAdamsAgent(manager: AgentManager, text: string): Promise<void> {
-  const settings = getSettings();
-  if (!settings.elevenlabsKey || settings.ttsProvider !== "elevenlabs") {
-    throw new Error("ElevenLabs is not configured as the active voice provider.");
-  }
+  await manager.speak({
+    type: "text",
+    input: text,
+    should_queue_speaks: false,
+  });
+}
 
-  stopAdamsSpeech();
-  const generation = speechGeneration;
-  const url = await speakWithElevenLabs(text);
-
-  try {
-    if (generation !== speechGeneration) return;
-
-    // No D-ID queue: a new request replaces any prior presenter speech.
-    void manager.speak({ type: "text", input: text, should_queue_speaks: false }).catch((error) => {
-      console.warn("[adams] D-ID lip animation failed", error);
-    });
-
-    const audio = new Audio(url);
-    audio.preload = "auto";
-    audio.setAttribute("playsinline", "true");
-    activeLocalAudio = audio;
-
-    try {
-      await audio.play();
-      await new Promise<void>((resolve, reject) => {
-        audio.onended = () => resolve();
-        audio.onerror = () => reject(new Error("ElevenLabs audio playback failed."));
-      });
-    } finally {
-      if (activeLocalAudio === audio) activeLocalAudio = null;
-      audio.pause();
-    }
-  } finally {
-    URL.revokeObjectURL(url);
-  }
+export function stopAdamsSpeech(): void {
+  // V2 Agents do not expose interrupt(); stopping the local audio element is no
+  // longer necessary because D-ID owns the synchronized audio/video stream.
 }
 
 export function estimateSpeechSeconds(text: string): number {
