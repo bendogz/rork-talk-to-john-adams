@@ -82,6 +82,7 @@ export async function speakWithElevenLabs(
           stability: 0.55,
           similarity_boost: 0.75,
           style: 0.25,
+          speed: 0.88,
           use_speaker_boost: true,
         },
       }),
