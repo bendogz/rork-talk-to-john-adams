@@ -3,8 +3,20 @@ import { createAgentManager, ConnectionState, StreamingState, type AgentManager 
 import { speakWithElevenLabs } from "@/lib/elevenlabs";
 import { getSettings } from "@/lib/settings";
 
-export const DID_AGENT_ID = import.meta.env.VITE_DID_AGENT_ID || "v2_agt_lhKl4JJ3";
-export const DID_CLIENT_KEY = import.meta.env.VITE_DID_CLIENT_KEY || "";
+// Rork may inject browser-visible variables using either VITE_* or its
+// EXPO_PUBLIC_* convention. Support both so the deployed build actually sees
+// the credential the user configured in Rork.
+const env = import.meta.env as Record<string, string | undefined>;
+export const DID_AGENT_ID =
+  env.VITE_DID_AGENT_ID ||
+  env.EXPO_PUBLIC_DID_AGENT_ID ||
+  "v2_agt_lhKl4JJ3";
+export const DID_CLIENT_KEY =
+  env.VITE_DID_CLIENT_KEY ||
+  env.EXPO_PUBLIC_DID_CLIENT_KEY ||
+  env.VITE_D_ID_CLIENT_KEY ||
+  env.EXPO_PUBLIC_D_ID_CLIENT_KEY ||
+  "";
 export const DID_IDLE_CLOSE_MS = 150000;
 export function isAgentEnabled(): boolean { return DID_AGENT_ID.length > 0 && DID_CLIENT_KEY.length > 0; }
 
@@ -15,8 +27,7 @@ export interface AdamsAgentCallbacks {
   onFail: (message: string) => void;
 }
 
-// The stage and conversation must share ONE D-ID WebRTC session. This also
-// lets the stage open the live presenter immediately, before the first question.
+// The stage and conversation must share ONE D-ID WebRTC session.
 let sharedManager: AgentManager | null = null;
 let sharedBoot: Promise<AgentManager> | null = null;
 let sharedStream: MediaStream | null = null;
@@ -34,8 +45,6 @@ export async function createAdamsAgentSession(callbacks: AdamsAgentCallbacks): P
 
   sharedBoot = createAgentManager(DID_AGENT_ID, {
     auth: { type: "key", clientKey: DID_CLIENT_KEY },
-    // V2 supports a warmup stream, so the exact Studio Agent becomes visible
-    // as soon as the WebRTC session connects instead of waiting for a question.
     streamOptions: { compatibilityMode: "auto", streamWarmup: true, outputResolution: 720 },
     callbacks: {
       onSrcObjectReady: (stream) => {
@@ -48,7 +57,9 @@ export async function createAdamsAgentSession(callbacks: AdamsAgentCallbacks): P
       onNewMessage: (messages, type) => {
         if (type !== "answer") return;
         const last = messages[messages.length - 1];
-        if (last?.role === "assistant" && last.content) for (const subscriber of subscribers) subscriber.onAnswer?.(last.content);
+        if (last?.role === "assistant" && last.content) {
+          for (const subscriber of subscribers) subscriber.onAnswer?.(last.content);
+        }
       },
       onConnectionStateChange: (state) => {
         if (state === ConnectionState.Fail || state === ConnectionState.Closed) {
@@ -76,10 +87,6 @@ export async function createAdamsAgentSession(callbacks: AdamsAgentCallbacks): P
 }
 
 export async function destroyAdamsAgentSession(manager: AgentManager): Promise<void> {
-  if (manager !== sharedManager && !sharedBoot) {
-    try { await manager.disconnect(); } catch (e) { console.warn("[adams] session cleanup failed", e); }
-    return;
-  }
   sharedUsers = Math.max(0, sharedUsers - 1);
   if (sharedUsers > 0) return;
   const current = sharedManager;
@@ -88,6 +95,8 @@ export async function destroyAdamsAgentSession(manager: AgentManager): Promise<v
   subscribers.clear();
   if (current) {
     try { await current.disconnect(); } catch (e) { console.warn("[adams] session cleanup failed", e); }
+  } else if (manager) {
+    try { await manager.disconnect(); } catch (e) { console.warn("[adams] session cleanup failed", e); }
   }
 }
 
