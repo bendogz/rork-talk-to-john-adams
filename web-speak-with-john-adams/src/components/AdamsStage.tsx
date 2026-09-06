@@ -1,83 +1,201 @@
 import { memo, useEffect, useRef, useState, type MutableRefObject } from "react";
 
 import type { StagePhase } from "@/hooks/useAdamsConversation";
-import { createAdamsAgentSession, destroyAdamsAgentSession, isAgentEnabled, type AdamsAgentCallbacks } from "@/lib/didAgent";
+import {
+  ADAMS_EYES_CLOSED_URL,
+  ADAMS_MOUTH_OPEN_URL,
+  ADAMS_PORTRAIT_URL,
+} from "@/lib/adams";
+import { cn } from "@/lib/utils";
 
 interface AdamsStageProps {
+  /** The scene's moment: standing and holding forth while he speaks. */
   phase: StagePhase;
+  /** Live mouth-open level (0..1) sampled from his voice. */
   mouthLevelRef: MutableRefObject<number>;
+  /** The living portrait: D-ID's live video of him, lips forming his words. */
   didStream?: MediaStream | null;
 }
 
-function AdamsStageComponent({ didStream }: AdamsStageProps) {
+/**
+ * The full-bleed candlelit scene, alive in its frame: Adams stands — breathing,
+ * blinking — and while he answers, the live D-ID stream takes the stage, his
+ * lips forming his words in that same room.
+ */
+function AdamsStageComponent({ phase, mouthLevelRef, didStream }: AdamsStageProps) {
+  const isSpeaking = phase === "speaking";
+  const [isLoaded, setIsLoaded] = useState<boolean>(false);
+  const mouthImgRef = useRef<HTMLImageElement | null>(null);
+  const eyesImgRef = useRef<HTMLImageElement | null>(null);
   const didVideoRef = useRef<HTMLVideoElement | null>(null);
-  const stageManagerRef = useRef<Awaited<ReturnType<typeof createAdamsAgentSession>> | null>(null);
-  const [liveStream, setLiveStream] = useState<MediaStream | null>(didStream ?? null);
 
+  // Preload the face variants so the first cross-fade does not pop.
   useEffect(() => {
-    if (!isAgentEnabled()) return;
-
-    let cancelled = false;
-    const callbacks: AdamsAgentCallbacks = {
-      onStream: (stream) => {
-        if (!cancelled) setLiveStream(stream);
-      },
-      onFail: (message) => console.warn("[adams] live presenter", message),
-      onIdle: () => undefined,
-    };
-
-    void createAdamsAgentSession(callbacks)
-      .then((manager) => {
-        if (cancelled) void destroyAdamsAgentSession(manager);
-        else stageManagerRef.current = manager;
-      })
-      .catch((error) => console.warn("[adams] could not open live presenter", error));
-
-    return () => {
-      cancelled = true;
-      const manager = stageManagerRef.current;
-      stageManagerRef.current = null;
-      if (manager) void destroyAdamsAgentSession(manager);
-    };
+    const sources = [ADAMS_PORTRAIT_URL, ADAMS_MOUTH_OPEN_URL, ADAMS_EYES_CLOSED_URL];
+    let pending = 0;
+    sources.forEach((source) => {
+      if (!source) return;
+      pending += 1;
+      const image = new Image();
+      const done = (): void => {
+        pending -= 1;
+        if (pending <= 0) setIsLoaded(true);
+      };
+      if (image.complete && image.src) {
+        done();
+        return;
+      }
+      image.onload = done;
+      image.onerror = done;
+      image.src = source;
+    });
   }, []);
 
+  // Drive the mouth layer from the live voice level, updated outside React renders.
   useEffect(() => {
-    if (didStream) setLiveStream(didStream);
-  }, [didStream]);
+    if (!ADAMS_MOUTH_OPEN_URL) return;
+    let frame = 0;
+    const tick = (): void => {
+      const el = mouthImgRef.current;
+      if (el) el.style.opacity = String(Math.min(1, Math.max(0, mouthLevelRef.current)));
+      frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [mouthLevelRef]);
 
-  const stream = didStream ?? liveStream;
-
+  // Feed the live D-ID stream to the video element and keep it playing.
   useEffect(() => {
     const el = didVideoRef.current;
-    if (!el || !stream) return;
+    if (!el) return;
+    if (didStream) {
+      if (el.srcObject !== didStream) el.srcObject = didStream;
+      void el.play().catch(() => undefined);
+    } else {
+      el.srcObject = null;
+    }
+  }, [didStream]);
 
-    // Use the complete D-ID WebRTC stream. Its audio is the same stream that
-    // drives the presenter's mouth, so the voice and lip movement stay synced.
-    el.srcObject = stream;
-    el.muted = false;
-    el.defaultMuted = false;
-    el.volume = 1;
-    el.playsInline = true;
-    void el.play().catch(() => undefined);
+  // Natural blinks every few seconds, with the occasional double-blink.
+  useEffect(() => {
+    if (!ADAMS_EYES_CLOSED_URL) return;
+    let timer = 0;
 
-    return () => {
-      if (el.srcObject === stream) el.srcObject = null;
+    const blink = (): void => {
+      const el = eyesImgRef.current;
+      if (el) {
+        el.style.opacity = "1";
+        window.setTimeout(() => {
+          if (el) el.style.opacity = "0";
+        }, 130);
+        if (Math.random() < 0.25) {
+          window.setTimeout(() => {
+            if (el) {
+              el.style.opacity = "1";
+              window.setTimeout(() => {
+                if (el) {
+                  el.style.opacity = "0";
+                }
+              }, 110);
+            }
+          }, 320);
+        }
+      }
+      timer = window.setTimeout(blink, 2800 + Math.random() * 3400);
     };
-  }, [stream]);
+
+    timer = window.setTimeout(blink, 2000);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  const frameClass =
+    "absolute left-0 h-[110%] w-full -translate-y-[4%] object-cover object-[50%_8%]";
+  const layerClass = "absolute inset-0 transition-opacity duration-[1400ms] ease-in-out";
 
   return (
-    <div className="pointer-events-none absolute inset-0 overflow-hidden bg-[radial-gradient(circle_at_50%_35%,hsl(35_25%_16%),hsl(30_25%_5%)_68%,hsl(25_20%_2%))]" aria-hidden="true">
-      <div className="absolute left-1/2 top-[5.5vh] h-[72vh] w-[min(88vw,62vh)] -translate-x-1/2 overflow-hidden rounded-[2px] border-[10px] border-[hsl(36_32%_25%)] bg-black shadow-[0_20px_70px_hsl(0_0%_0%/0.65),inset_0_0_0_2px_hsl(40_45%_58%/0.25)]">
-        <div className="absolute inset-[5px] z-10 rounded-[1px] border border-[hsl(40_45%_58%/0.45)]" />
-        {stream ? (
-          <video
-            ref={didVideoRef}
-            autoPlay
-            playsInline
-            className="h-full w-full object-contain object-center [transform:translateZ(0)] [backface-visibility:hidden]"
+    <div className="pointer-events-none absolute inset-0 overflow-hidden bg-stage" aria-hidden="true">
+      <>
+          {/* The room itself: he stands, holding forth — lips and blinks live here.
+              While the live stream shows, the painted layers stand down entirely:
+              one Adams on the stage, never two. */}
+          <div
+            className={cn(
+              "adams-breathe absolute inset-0 transition-opacity duration-700",
+              didStream ? "opacity-0" : "opacity-100",
+            )}
+          >
+            <div className={layerClass}>
+              <img
+                src={ADAMS_PORTRAIT_URL}
+                alt=""
+                className={cn(frameClass, isLoaded ? "opacity-100" : "opacity-0")}
+                draggable={false}
+              />
+
+              {ADAMS_MOUTH_OPEN_URL ? (
+                <img
+                  ref={mouthImgRef}
+                  src={ADAMS_MOUTH_OPEN_URL}
+                  alt=""
+                  className={cn(frameClass, "opacity-0")}
+                  draggable={false}
+                />
+              ) : null}
+
+              {ADAMS_EYES_CLOSED_URL ? (
+                <img
+                  ref={eyesImgRef}
+                  src={ADAMS_EYES_CLOSED_URL}
+                  alt=""
+                  className={cn(frameClass, "opacity-0")}
+                  draggable={false}
+                />
+              ) : null}
+            </div>
+          </div>
+
+          {/* Him alive: while the portrait studio streams, his lips form his
+              words in this same room, melting back to the painting when it rests. */}
+          {didStream ? (
+            <video
+              ref={didVideoRef}
+              autoPlay
+              playsInline
+              className={cn(frameClass, "motion-fade-in")}
+            />
+          ) : null}
+
+          {/* Candle glow at the left of the scene */}
+          <div className="animate-candle-flicker absolute left-[14%] top-[38%] h-[38vh] w-[38vh] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[radial-gradient(circle,hsl(38_85%_62%/0.24),transparent_65%)]" />
+
+          {/* Edge vignette — deepens while he speaks so the caption carries the eye */}
+          <div
+            className={cn(
+              "absolute inset-0 transition-opacity duration-700",
+              isSpeaking ? "opacity-100" : "opacity-80",
+            )}
+            style={{
+              background:
+                "radial-gradient(120% 85% at 50% 34%, transparent 28%, hsl(34 40% 4% / 0.5) 72%, hsl(34 45% 3% / 0.9) 100%)",
+            }}
           />
-        ) : null}
-      </div>
+
+          {/* Floor of shadow beneath the floating parchment */}
+          <div
+            className={cn(
+              "absolute inset-x-0 bottom-0 h-[62%] transition-opacity duration-700",
+              isSpeaking ? "opacity-100" : "opacity-85",
+            )}
+            style={{
+              background: "linear-gradient(to top, hsl(34 45% 3% / 0.94), hsl(34 40% 5% / 0.5) 46%, transparent)",
+            }}
+          />
+
+          <div
+            className="absolute inset-x-0 top-0 h-32"
+            style={{ background: "linear-gradient(to bottom, hsl(34 45% 3% / 0.6), transparent)" }}
+          />
+      </>
     </div>
   );
 }
