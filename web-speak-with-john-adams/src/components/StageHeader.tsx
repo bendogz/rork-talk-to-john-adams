@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { AudioLines, Settings } from "lucide-react";
+import { AudioLines, Landmark, Settings } from "lucide-react";
 
+import { NavLink } from "@/components/NavLink";
 import { SettingsDialog } from "@/components/SettingsDialog";
 import type { StagePhase } from "@/hooks/useAdamsConversation";
 import { APP_SUBTITLE, APP_TITLE } from "@/lib/adams";
@@ -38,6 +39,16 @@ export function StageHeader({ phase }: StageHeaderProps) {
           <Ornament />
         </div>
       )}
+
+      {/* Into the essay: the historical foundations, each point askable live */}
+      <NavLink
+        to="/foundations"
+        aria-label="The Foundations — the historical essay, each point askable live"
+        className="absolute left-3 top-[max(0.7rem,env(safe-area-inset-top))] flex h-10 items-center gap-2 rounded-full px-3 text-gold-bright/70 transition-colors hover:bg-[hsl(41_60%_50%/0.12)] hover:text-gold-bright sm:left-5"
+      >
+        <Landmark className="h-[18px] w-[18px]" strokeWidth={1.6} aria-hidden="true" />
+        <span className="hidden font-serif-voice text-[0.9rem] sm:inline">The Foundations</span>
+      </NavLink>
 
       <button
         type="button"

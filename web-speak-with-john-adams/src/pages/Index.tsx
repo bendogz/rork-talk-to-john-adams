@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 
 import { AdamsStage } from "@/components/AdamsStage";
 import { CaptionBand } from "@/components/CaptionBand";
@@ -10,6 +11,8 @@ import { useAdamsConversation } from "@/hooks/useAdamsConversation";
 import { useVoiceInput } from "@/hooks/useVoiceInput";
 
 const Index = () => {
+  const location = useLocation();
+  const navigate = useNavigate();
   const [lastQuestion, setLastQuestion] = useState<string>("");
   /** Set once `voice` exists below; keeps the mic hook's callback stable. */
   const askRef = useRef<(question: string) => void>(() => undefined);
@@ -63,6 +66,18 @@ const Index = () => {
   useEffect(() => {
     askRef.current = submitQuestion;
   }, [submitQuestion]);
+
+  /** Guards the carried question against StrictMode's double mounting. */
+  const askedPendingRef = useRef<string | null>(null);
+  // A question carried from the Foundations essay: asked once, then cleared.
+  useEffect(() => {
+    const pending = (location.state as { pendingQuestion?: unknown } | null)?.pendingQuestion;
+    if (typeof pending !== "string" || pending.length === 0) return;
+    if (askedPendingRef.current === pending) return;
+    askedPendingRef.current = pending;
+    navigate(".", { replace: true, state: null });
+    submitQuestion(pending);
+  }, [location.state, navigate, submitQuestion]);
 
   useEffect(() => {
     voiceRef.current = voice;
