@@ -92,6 +92,12 @@ const Index = () => {
       void voice.startAmbient(stopSpeaking);
       return;
     }
+    // The pen is up: the ear stands down, so no stray sound or echo re-asks
+    // the question and keeps him thinking longer than his thoughts require.
+    if (phase === "considering") {
+      voice.hold();
+      return;
+    }
     voice.stopAmbient();
     if (resumeListenRef.current) {
       resumeListenRef.current = false;
@@ -104,7 +110,7 @@ const Index = () => {
   // the listening ear opens of its own accord when he falls quiet.
   const hasOpenedEarRef = useRef<boolean>(false);
   useEffect(() => {
-    if (hasOpenedEarRef.current || phase === "speaking") return;
+    if (hasOpenedEarRef.current || phase === "speaking" || phase === "considering") return;
     hasOpenedEarRef.current = true;
     if (voice.status === "idle") void voice.start();
   }, [phase, voice]);
@@ -124,8 +130,10 @@ const Index = () => {
 
   const handleMicPress = useCallback((): void => {
     if (phase === "speaking") stopSpeaking();
+    // While the pen is up, the ear is closed — a press must not reopen it.
+    if (busy) return;
     voice.toggle();
-  }, [phase, stopSpeaking, voice]);
+  }, [busy, phase, stopSpeaking, voice]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {

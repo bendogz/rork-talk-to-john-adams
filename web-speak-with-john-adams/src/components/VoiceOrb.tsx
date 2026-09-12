@@ -15,6 +15,7 @@ const STATUS_TEXT: Record<VoiceStatus, string> = {
   listening: "I am listening…",
   transcribing: "Making out your words…",
   ambient: "Speak up whenever you wish — I will yield the floor",
+  held: "His pen is up — he will hear you when he finishes",
 };
 
 /**

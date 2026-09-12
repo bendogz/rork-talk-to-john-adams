@@ -4,7 +4,7 @@ import { transcribeWithOpenAI, OpenAIError } from "@/lib/openai";
 import { getSettings } from "@/lib/settings";
 import { transcribeQuestion, ToolkitError } from "@/lib/toolkit";
 
-export type VoiceStatus = "idle" | "listening" | "transcribing" | "ambient";
+export type VoiceStatus = "idle" | "listening" | "transcribing" | "ambient" | "held";
 
 interface UseVoiceInputResult {
   status: VoiceStatus;
@@ -14,6 +14,8 @@ interface UseVoiceInputResult {
   start: () => Promise<void>;
   startAmbient: (onBargeIn: () => void) => Promise<void>;
   stopAmbient: () => void;
+  /** The ear stands down (no hearing) while he gathers his answer. */
+  hold: () => void;
   clearError: () => void;
 }
 
@@ -58,7 +60,7 @@ export function useVoiceInput(onTranscript: (text: string) => void): UseVoiceInp
   const recordingStartedAtRef = useRef(0);
   const hasSpokenRef = useRef(false);
   const lastVoiceAtRef = useRef(0);
-  const modeRef = useRef<"listen" | "ambient">("listen");
+  const modeRef = useRef<"listen" | "ambient" | "hold">("listen");
   const bargeInRef = useRef<() => void>(() => undefined);
   const graceUntilRef = useRef(0);
 
@@ -105,8 +107,10 @@ export function useVoiceInput(onTranscript: (text: string) => void): UseVoiceInp
   const transcribeAndContinue = useCallback((blob: Blob, mimeType: string): void => {
     // Keep the persistent mic alive while transcription happens.
     if (blob.size < 1200) {
-      setStatus(modeRef.current === "ambient" ? "ambient" : "listening");
-      statusRef.current = modeRef.current === "ambient" ? "ambient" : "listening";
+      const nextStatus =
+        modeRef.current === "ambient" ? "ambient" : modeRef.current === "hold" ? "held" : "listening";
+      setStatus(nextStatus);
+      statusRef.current = nextStatus;
       return;
     }
 
@@ -119,7 +123,8 @@ export function useVoiceInput(onTranscript: (text: string) => void): UseVoiceInp
     transcribe(blob)
       .then((text) => {
         transcriptHandler.current(text);
-        const nextStatus = modeRef.current === "ambient" ? "ambient" : "listening";
+        const nextStatus =
+          modeRef.current === "ambient" ? "ambient" : modeRef.current === "hold" ? "held" : "listening";
         setStatus(nextStatus);
         statusRef.current = nextStatus;
       })
@@ -130,7 +135,8 @@ export function useVoiceInput(onTranscript: (text: string) => void): UseVoiceInp
             ? transcribeError.message
             : "Your words could not be made out. Try speaking again.",
         );
-        const nextStatus = modeRef.current === "ambient" ? "ambient" : "listening";
+        const nextStatus =
+          modeRef.current === "ambient" ? "ambient" : modeRef.current === "hold" ? "held" : "listening";
         setStatus(nextStatus);
         statusRef.current = nextStatus;
       });
@@ -215,6 +221,9 @@ export function useVoiceInput(onTranscript: (text: string) => void): UseVoiceInp
         return;
       }
 
+      // The pen is up: the ear stands down — nothing is heard until he answers.
+      if (modeRef.current === "hold") return;
+
       if (modeRef.current === "ambient") {
         if (now < graceUntilRef.current || rms <= BARGE_RMS) return;
         if (lastVoiceAtRef.current === 0) lastVoiceAtRef.current = now;
@@ -249,7 +258,8 @@ export function useVoiceInput(onTranscript: (text: string) => void): UseVoiceInp
       if (!stream) return;
       streamRef.current = stream;
       monitor(stream);
-      const nextStatus = modeRef.current === "ambient" ? "ambient" : "listening";
+      const nextStatus =
+        modeRef.current === "ambient" ? "ambient" : modeRef.current === "hold" ? "held" : "listening";
       setStatus(nextStatus);
       statusRef.current = nextStatus;
     } catch (error) {
@@ -289,6 +299,13 @@ export function useVoiceInput(onTranscript: (text: string) => void): UseVoiceInp
     }
   }, []);
 
+  /** The pen is up: the ear stands down until he has answered. */
+  const hold = useCallback((): void => {
+    modeRef.current = "hold";
+    setStatus("held");
+    statusRef.current = "held";
+  }, []);
+
   // The ear never closes once opened: a press on the seal finishes the current
   // segment so it can be heard, and opens the ear if it was somehow shut.
   const toggle = useCallback((): void => {
@@ -302,7 +319,7 @@ export function useVoiceInput(onTranscript: (text: string) => void): UseVoiceInp
   const clearError = useCallback((): void => setError(null), []);
 
   return useMemo(
-    () => ({ status, isSupported, error, toggle, start, startAmbient, stopAmbient, clearError }),
-    [clearError, error, isSupported, start, startAmbient, status, stopAmbient, toggle],
+    () => ({ status, isSupported, error, toggle, start, startAmbient, stopAmbient, hold, clearError }),
+    [clearError, error, isSupported, hold, start, startAmbient, status, stopAmbient, toggle],
   );
 }

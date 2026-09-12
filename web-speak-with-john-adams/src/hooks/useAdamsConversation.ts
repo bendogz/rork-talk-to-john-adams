@@ -4,7 +4,6 @@ import { ADAMS_GREETING_SPEECH, type ChatTurn, type Exchange } from "@/lib/adams
 import type { AgentManager } from "@d-id/client-sdk";
 import {
   agentSleep,
-  chatWithAdamsAgent,
   chunkAnswer,
   createAdamsAgentSession,
   destroyAdamsAgentSession,
@@ -123,8 +122,6 @@ export function useAdamsConversation({ onAnswerComplete }: UseAdamsConversationO
   const didStreamRef = useRef<MediaStream | null>(null);
   /** The agent's latest reply, captured as its spoken message lands. */
   const agentAnswerRef = useRef<string>("");
-  /** Resolved when his rendered speech finishes; swapped per answer. */
-  const agentIdleResolverRef = useRef<(() => void) | null>(null);
   const [didStream, setDidStream] = useState<MediaStream | null>(null);
 
   const clearRevealTimer = useCallback((): void => {
@@ -139,22 +136,6 @@ export function useAdamsConversation({ onAnswerComplete }: UseAdamsConversationO
       window.clearTimeout(agentIdleTimerRef.current);
       agentIdleTimerRef.current = null;
     }
-  }, []);
-
-  /** Waits for his stream to fall quiet — or gives up at the cap. */
-  const waitForAgentIdle = useCallback((capMs: number): Promise<void> => {
-    return new Promise((resolve) => {
-      let settled = false;
-      const settle = (): void => {
-        if (settled) return;
-        settled = true;
-        agentIdleResolverRef.current = null;
-        window.clearTimeout(timer);
-        resolve();
-      };
-      const timer = window.setTimeout(settle, capMs);
-      agentIdleResolverRef.current = settle;
-    });
   }, []);
 
   /** Closes the living portrait, so no studio minutes are spent while he listens. */
@@ -186,9 +167,6 @@ export function useAdamsConversation({ onAnswerComplete }: UseAdamsConversationO
       },
       onAnswer: (text) => {
         agentAnswerRef.current = text;
-      },
-      onIdle: () => {
-        agentIdleResolverRef.current?.();
       },
       onFail: (message) => console.warn("[adams] living portrait connection changed", message),
     };
@@ -533,57 +511,6 @@ export function useAdamsConversation({ onAnswerComplete }: UseAdamsConversationO
         revealedAnswer: "",
         needsPlaybackTap: false,
       }));
-
-      // The agent's own mind first: he listens, considers, and speaks through
-      // the living portrait. The house pipeline stands in when the agent cannot.
-      if (isAgentEnabled()) {
-        try {
-          agentAnswerRef.current = "";
-          const manager = await ensureAgent();
-          // His picture first: without the stream he would answer as bare text
-          // while his voice plays into a dead feed. A few seconds of grace,
-          // then the house pipeline takes the question instead.
-          let waitedMs = 0;
-          while (!didStreamRef.current && waitedMs < 6000) {
-            if (controller.signal.aborted) return;
-            await agentSleep(250);
-            waitedMs += 250;
-          }
-          if (!didStreamRef.current) {
-            throw new Error("the living portrait never showed its face");
-          }
-          const replied = await chatWithAdamsAgent(manager, question);
-          if (controller.signal.aborted) return;
-          const answer = replied || agentAnswerRef.current;
-          if (answer.length > 0) {
-            pendingAnswerRef.current = answer;
-            const exchange: Exchange = { id: createId(), question, answer };
-            exchangesRef.current = [...exchangesRef.current, exchange];
-            setState((prev) => ({
-              ...prev,
-              phase: "speaking",
-              exchanges: [...prev.exchanges, exchange],
-              viewIndex: prev.exchanges.length,
-              revealedAnswer: "",
-              error: null,
-              needsPlaybackTap: false,
-            }));
-            // Captions keep pace with the rendered voice; the seal opens when
-            // his stream actually falls quiet — the cap is only a safety net.
-            startReveal(answer, estimateSpeechSeconds(answer));
-            await waitForAgentIdle(estimateSpeechSeconds(answer) * 1000 + 1500);
-            if (controller.signal.aborted) return;
-            finishSpeaking();
-            onAnswerCompleteRef.current?.();
-            return;
-          }
-          console.warn("[adams] the agent answered with silence; falling back");
-        } catch (agentError) {
-          if (controller.signal.aborted) return;
-          console.warn("[adams] the agent's mind failed; falling back", agentError);
-          destroyAgent();
-        }
-      }
 
       try {
         // The greeting carries no question, so it is not offered as context.
