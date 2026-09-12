@@ -83,18 +83,12 @@ const Index = () => {
     voiceRef.current = voice;
   }, [voice]);
 
-  // An ear always open: while he holds forth, a sustained voice yields the floor;
-  // when he falls quiet, the microphone reopens of its own accord. The resume
-  // flag is needed because the old listener still holds the ear as he finishes.
+  // An ear that yields the floor: while he thinks or speaks, it hears nothing;
+  // the moment he falls quiet, the microphone reopens of its own accord. The
+  // resume flag is set when an answer finishes naturally.
   useEffect(() => {
-    if (phase === "speaking") {
+    if (phase === "considering" || phase === "speaking") {
       resumeListenRef.current = false;
-      void voice.startAmbient(stopSpeaking);
-      return;
-    }
-    // The pen is up: the ear stands down, so no stray sound or echo re-asks
-    // the question and keeps him thinking longer than his thoughts require.
-    if (phase === "considering") {
       voice.hold();
       return;
     }
@@ -103,7 +97,7 @@ const Index = () => {
       resumeListenRef.current = false;
       void voice.start();
     }
-  }, [phase, stopSpeaking, voice]);
+  }, [phase, voice]);
 
   // The ear opens the moment the page loads — hands-free from the first beat.
   // While the greeting holds the floor, the ambient ear is armed instead, and
@@ -193,6 +187,7 @@ const Index = () => {
             status={voice.status}
             isSupported={voice.isSupported}
             disabled={busy}
+            speaking={phase === "speaking"}
             onPress={handleMicPress}
           />
         </div>

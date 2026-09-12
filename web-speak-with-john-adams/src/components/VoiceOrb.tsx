@@ -7,6 +7,8 @@ interface VoiceOrbProps {
   status: VoiceStatus;
   isSupported: boolean;
   disabled: boolean;
+  /** True while Mr. Adams holds the floor — the ear is closed to give way. */
+  speaking?: boolean;
   onPress: () => void;
 }
 
@@ -22,7 +24,7 @@ const STATUS_TEXT: Record<VoiceStatus, string> = {
  * The single wax-seal microphone. No keyboard: the visitor presses the seal,
  * speaks, and the question ends itself once they fall quiet.
  */
-export function VoiceOrb({ status, isSupported, disabled, onPress }: VoiceOrbProps) {
+export function VoiceOrb({ status, isSupported, disabled, speaking = false, onPress }: VoiceOrbProps) {
   /** Armed: the ear is open and a raised voice interrupts him. */
   const isArmed = status === "listening" || status === "ambient";
   const isListening = status === "listening";
@@ -73,7 +75,9 @@ export function VoiceOrb({ status, isSupported, disabled, onPress }: VoiceOrbPro
       <p className="font-serif-voice text-[0.98rem] italic text-gold-bright/90" aria-live="polite">
         {!isSupported
           ? "This browser will not lend a microphone — Mr. Adams awaits another device."
-          : STATUS_TEXT[status]}
+          : speaking
+            ? "He holds the floor — touch the seal to stop him"
+            : STATUS_TEXT[status]}
       </p>
     </div>
   );
