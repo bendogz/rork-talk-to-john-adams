@@ -121,6 +121,20 @@ export async function speakOnAdamsAgent(manager: AgentManager, text: string): Pr
   });
 }
 
+/**
+ * Cuts him off mid-sentence while keeping the stream open, so the next answer
+ * starts at once. Returns false when this stream cannot be interrupted.
+ */
+export function interruptAdamsAgent(manager: AgentManager): boolean {
+  try {
+    if (!manager.getIsInterruptAvailable()) return false;
+    manager.interrupt({ type: "click" });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** Ends the stream so no studio minutes are spent while he merely listens. */
 export async function destroyAdamsAgentSession(manager: AgentManager): Promise<void> {
   try {

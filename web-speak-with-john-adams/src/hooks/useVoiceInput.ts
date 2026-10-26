@@ -16,6 +16,8 @@ interface UseVoiceInputResult {
   stopAmbient: () => void;
   /** The ear stands down (no hearing) while he gathers his answer. */
   hold: () => void;
+  /** The audience is over for the day: the microphone is released entirely. */
+  shutdown: () => void;
   clearError: () => void;
 }
 
@@ -122,7 +124,8 @@ export function useVoiceInput(onTranscript: (text: string) => void): UseVoiceInp
 
     transcribe(blob)
       .then((text) => {
-        transcriptHandler.current(text);
+        // Silence, a cough, or a breath yields no words: keep listening quietly.
+        if (text.trim().length > 0) transcriptHandler.current(text);
         const nextStatus =
           modeRef.current === "ambient" ? "ambient" : modeRef.current === "hold" ? "held" : "listening";
         setStatus(nextStatus);
@@ -306,6 +309,11 @@ export function useVoiceInput(onTranscript: (text: string) => void): UseVoiceInp
     statusRef.current = "held";
   }, []);
 
+  const shutdown = useCallback((): void => {
+    modeRef.current = "hold";
+    closeMicrophone();
+  }, [closeMicrophone]);
+
   // The ear never closes once opened: a press on the seal finishes the current
   // segment so it can be heard, and opens the ear if it was somehow shut.
   const toggle = useCallback((): void => {
@@ -319,7 +327,7 @@ export function useVoiceInput(onTranscript: (text: string) => void): UseVoiceInp
   const clearError = useCallback((): void => setError(null), []);
 
   return useMemo(
-    () => ({ status, isSupported, error, toggle, start, startAmbient, stopAmbient, hold, clearError }),
-    [clearError, error, isSupported, hold, start, startAmbient, status, stopAmbient, toggle],
+    () => ({ status, isSupported, error, toggle, start, startAmbient, stopAmbient, hold, shutdown, clearError }),
+    [clearError, error, isSupported, hold, shutdown, start, startAmbient, status, stopAmbient, toggle],
   );
 }

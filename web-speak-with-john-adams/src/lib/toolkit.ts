@@ -96,6 +96,85 @@ export async function askAdams(question: string, history: ChatTurn[], signal?: A
   return sanitizeReply(reply);
 }
 
+/**
+ * Reads an OpenAI-compatible chat response that may arrive as a server-sent
+ * event stream (word by word) or, if the server declines to stream, as one
+ * JSON body. Each fresh piece of text is handed to `onDelta` as it lands.
+ */
+export async function readChatStream(response: Response, onDelta: (text: string) => void): Promise<string> {
+  const contentType = response.headers.get("content-type") ?? "";
+  if (!response.body || !contentType.includes("text/event-stream")) {
+    const data = (await response.json()) as ChatCompletionResponse;
+    const whole = data.choices?.[0]?.message?.content ?? "";
+    if (whole.length > 0) onDelta(whole);
+    return whole;
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let full = "";
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    let newline = buffer.indexOf("\n");
+    while (newline !== -1) {
+      const line = buffer.slice(0, newline).trim();
+      buffer = buffer.slice(newline + 1);
+      newline = buffer.indexOf("\n");
+      if (!line.startsWith("data:")) continue;
+      const payload = line.slice(5).trim();
+      if (payload === "[DONE]") return full;
+      try {
+        const chunk = JSON.parse(payload) as { choices?: { delta?: { content?: string | null } }[] };
+        const piece = chunk.choices?.[0]?.delta?.content ?? "";
+        if (piece.length > 0) {
+          full += piece;
+          onDelta(piece);
+        }
+      } catch {
+        // A partial or keep-alive line; the next read completes it.
+      }
+    }
+  }
+  return full;
+}
+
+/**
+ * Streams Adams' reply on the house post, handing each piece of text to
+ * `onDelta` the moment it is written, so he can begin speaking at once.
+ */
+export async function streamAdams(
+  question: string,
+  history: ChatTurn[],
+  onDelta: (text: string) => void,
+  signal?: AbortSignal,
+): Promise<string> {
+  const response = await fetch(`${TOOLKIT_URL}/v2/vercel/v1/chat/completions`, {
+    method: "POST",
+    headers: authHeaders(),
+    signal,
+    body: JSON.stringify({
+      model: CHAT_MODEL,
+      messages: [
+        { role: "system" as const, content: ADAMS_SYSTEM_PROMPT },
+        ...history.slice(-24),
+        { role: "user" as const, content: question },
+      ],
+      temperature: 0.85,
+      max_tokens: MAX_REPLY_TOKENS,
+      stream: true,
+    }),
+  });
+
+  if (!response.ok) {
+    console.error("[adams] chat request failed", response.status);
+    throw new ToolkitError(friendlyMessage(response.status), response.status);
+  }
+  return readChatStream(response, onDelta);
+}
+
 /** Strips markdown artefacts and any stray speaker label the model may emit. */
 export function sanitizeReply(raw: string): string {
   return raw
@@ -164,10 +243,8 @@ export async function transcribeQuestion(
   const data = (await response.json()) as TranscriptionResponse;
   const text = (data.text ?? data.transcript ?? data.results?.[0]?.text ?? "").trim();
 
-  if (text.length === 0) {
-    throw new ToolkitError("No words were heard. Try speaking again.", 422);
-  }
-
+  // Silence or a cough is not an error: an empty result simply means no
+  // question was asked, and the ear keeps listening.
   return text;
 }
 

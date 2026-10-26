@@ -2,12 +2,14 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
 import { AdamsStage } from "@/components/AdamsStage";
+import { AudienceClosedCard } from "@/components/AudienceClosedCard";
 import { CaptionBand } from "@/components/CaptionBand";
 import { ConsideringLine } from "@/components/ConsideringLine";
 import { GreetingCard } from "@/components/GreetingCard";
 import { StageHeader } from "@/components/StageHeader";
 import { VoiceOrb } from "@/components/VoiceOrb";
 import { useAdamsConversation } from "@/hooks/useAdamsConversation";
+import { isAllowanceSpentToday, useDailyAllowance } from "@/hooks/useDailyAllowance";
 import { useVoiceInput } from "@/hooks/useVoiceInput";
 
 const Index = () => {
@@ -19,6 +21,12 @@ const Index = () => {
   const voiceRef = useRef<ReturnType<typeof useVoiceInput> | null>(null);
   /** Set when an answer ends; the microphone reopens once the ambient ear closes. */
   const resumeListenRef = useRef<boolean>(false);
+  /** Ten minutes a day per device: open, then his farewell, then closed until midnight. */
+  const [audience, setAudience] = useState<"open" | "closing" | "over">(() =>
+    isAllowanceSpentToday() ? "over" : "open",
+  );
+  const audienceOpen = audience === "open";
+  const allowance = useDailyAllowance(audienceOpen);
 
   const {
     phase,
@@ -31,6 +39,7 @@ const Index = () => {
     needsPlaybackTap,
     mouthLevelRef,
     ask,
+    bidFarewell,
     stopSpeaking,
     retryPlayback,
     showPrevious,
@@ -41,6 +50,7 @@ const Index = () => {
     onAnswerComplete: () => {
       resumeListenRef.current = true;
     },
+    closed: audience === "over",
   });
 
   const busy = phase === "considering";
@@ -54,13 +64,13 @@ const Index = () => {
   const submitQuestion = useCallback(
     (question: string): void => {
       const trimmed = question.trim();
-      if (trimmed.length === 0) return;
+      if (trimmed.length === 0 || !audienceOpen) return;
       dismissError();
       voice.clearError();
       setLastQuestion(trimmed);
       void ask(trimmed);
     },
-    [ask, dismissError, voice],
+    [ask, audienceOpen, dismissError, voice],
   );
 
   useEffect(() => {
@@ -92,26 +102,44 @@ const Index = () => {
       voice.hold();
       return;
     }
+    if (!audienceOpen) return;
     voice.stopAmbient();
     if (resumeListenRef.current) {
       resumeListenRef.current = false;
       void voice.start();
     }
-  }, [phase, voice]);
+  }, [audienceOpen, phase, voice]);
+
+  // The ten minutes are spent: once he has finished his current thought, he
+  // says his goodbye, and the microphone is released until tomorrow.
+  useEffect(() => {
+    if (!allowance.exhausted || audience !== "open") return;
+    if (phase === "considering" || phase === "speaking") return;
+    setAudience("closing");
+    voice.hold();
+    void bidFarewell().finally(() => setAudience("over"));
+  }, [allowance.exhausted, audience, bidFarewell, phase, voice]);
+
+  useEffect(() => {
+    if (audience === "over") voice.shutdown();
+  }, [audience, voice]);
 
   // The ear opens the moment the page loads — hands-free from the first beat.
   // While the greeting holds the floor, the ambient ear is armed instead, and
   // the listening ear opens of its own accord when he falls quiet.
   const hasOpenedEarRef = useRef<boolean>(false);
   useEffect(() => {
-    if (hasOpenedEarRef.current || phase === "speaking" || phase === "considering") return;
+    if (hasOpenedEarRef.current || !audienceOpen || phase === "speaking" || phase === "considering") return;
     hasOpenedEarRef.current = true;
     if (voice.status === "idle") void voice.start();
-  }, [phase, voice]);
+  }, [audienceOpen, phase, voice]);
 
   // A fallback for a denied permission: the first touch re-asks for the ear.
+  const audienceOpenRef = useRef<boolean>(audienceOpen);
+  audienceOpenRef.current = audienceOpen;
   useEffect(() => {
     const openEar = (): void => {
+      if (!audienceOpenRef.current) return;
       if (voiceRef.current?.status === "idle") void voiceRef.current.start();
     };
     window.addEventListener("pointerdown", openEar, { once: true });
@@ -124,10 +152,10 @@ const Index = () => {
 
   const handleMicPress = useCallback((): void => {
     if (phase === "speaking") stopSpeaking();
-    // While the pen is up, the ear is closed — a press must not reopen it.
-    if (busy) return;
+    // While the pen is up, or the audience is over, a press must not reopen the ear.
+    if (busy || !audienceOpen) return;
     voice.toggle();
-  }, [busy, phase, stopSpeaking, voice]);
+  }, [audienceOpen, busy, phase, stopSpeaking, voice]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
@@ -142,7 +170,8 @@ const Index = () => {
   }, [handleMicPress, phase, stopSpeaking]);
 
   const notice = error ?? voice.error;
-  const showGreeting = currentExchange === null && phase !== "considering";
+  const showGreeting = currentExchange === null && phase !== "considering" && audience !== "over";
+  const minutesLeft = Math.ceil(allowance.remainingMs / 60000);
 
   return (
     <main className="relative flex h-[100dvh] w-full flex-col overflow-hidden bg-stage">
@@ -173,7 +202,9 @@ const Index = () => {
           />
         ) : null}
 
-        {notice !== null ? (
+        {audience === "over" && phase !== "speaking" ? <AudienceClosedCard /> : null}
+
+        {notice !== null && audience !== "over" ? (
           <p
             role="status"
             className="mx-auto max-w-2xl rounded-[5px] border border-[hsl(11_50%_45%/0.5)] bg-[hsl(11_45%_16%/0.72)] px-4 py-2 text-center font-serif-voice text-[0.95rem] text-[hsl(41_50%_84%)]"
@@ -182,15 +213,22 @@ const Index = () => {
           </p>
         ) : null}
 
-        <div className="pt-1">
-          <VoiceOrb
-            status={voice.status}
-            isSupported={voice.isSupported}
-            disabled={busy}
-            speaking={phase === "speaking"}
-            onPress={handleMicPress}
-          />
-        </div>
+        {audience === "over" ? null : (
+          <div className="flex flex-col items-center gap-1.5 pt-1">
+            <VoiceOrb
+              status={voice.status}
+              isSupported={voice.isSupported}
+              disabled={busy}
+              speaking={phase === "speaking"}
+              onPress={handleMicPress}
+            />
+            {audienceOpen && minutesLeft <= 2 ? (
+              <p className="font-serif-voice text-[0.85rem] italic text-gold/70" aria-live="polite">
+                {minutesLeft <= 1 ? "About a minute remains" : "About two minutes remain"} in today's audience
+              </p>
+            ) : null}
+          </div>
+        )}
       </section>
     </main>
   );

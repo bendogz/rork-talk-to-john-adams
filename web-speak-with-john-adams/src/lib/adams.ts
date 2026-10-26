@@ -1,11 +1,11 @@
 import { ADAMS_KNOWLEDGE } from "./adams-knowledge";
 
 export const ADAMS_PORTRAIT_URL =
-  "https://r2-pub.rork.com/projects/jik0ntwupcavtim1umit5/assets/ba4d35d3-ba93-45d3-b9e0-26d770a9947a.png";
+  "https://jik0ntwupcavtim1umit5.rork.app/~assets/img/ba4d35d3-ba93-45d3-b9e0-26d770a9947a.png";
 export const ADAMS_MOUTH_OPEN_URL: string | null =
-  "https://r2-pub.rork.com/projects/jik0ntwupcavtim1umit5/assets/7d45c260-9111-467b-8229-be6c283e43c5.png";
+  "https://jik0ntwupcavtim1umit5.rork.app/~assets/img/7d45c260-9111-467b-8229-be6c283e43c5.png";
 export const ADAMS_EYES_CLOSED_URL: string | null =
-  "https://r2-pub.rork.com/projects/jik0ntwupcavtim1umit5/assets/b2087bf0-8e5d-42c2-8a90-20dd8a3e627c.png";
+  "https://jik0ntwupcavtim1umit5.rork.app/~assets/img/b2087bf0-8e5d-42c2-8a90-20dd8a3e627c.png";
 
 export const ADAMS_VOICE_ID = "pqHfZKP75CvOlQylNhV4";
 export const APP_TITLE = "Speak with John Adams";
@@ -17,6 +17,20 @@ export const GREETING_LINES: readonly string[] = [
 ];
 
 export const ADAMS_GREETING_SPEECH = `Good day to you, friend. I am John Adams of Braintree, Massachusetts — lawyer, farmer, husband to Abigail, patriot, diplomat, Vice President, and second President of the United States. I was born in 1735, studied at Harvard, practiced law, and was drawn into the struggle for American independence. I served in the Continental Congress, worked abroad on behalf of the new republic, and spent much of my life wrestling with the difficult question of how a free people might govern themselves without surrendering their liberty. One experience that has remained particularly important to me was defending the British soldiers charged after the Boston Massacre. I knew the public was angry, but I believed that the rule of law must not depend upon the popularity of the accused. My wife Abigail was also a remarkable companion through the many separations and burdens of public life. I have lived a long life among books, laws, politics, family, and arguments — and I confess I have never found a shortage of opinions. Now, what would you like to ask me?`;
+
+/** His parting words when a visitor's daily audience of ten minutes has run out. */
+export const ADAMS_FAREWELL_SPEECH =
+  "I perceive our time is over for today, my friend. The candle burns low here in Quincy, and even a man of my many opinions must keep his appointments. I have enjoyed the argument. Come back tomorrow, and we shall take it up again where we left it. Good day to you.";
+
+/** Short openings he may speak while the rest of his answer is still forming. */
+export const ADAMS_OPENERS: readonly string[] = [
+  "A fair question.",
+  "Well, let me be plain with you.",
+  "Ah, now that is worth answering.",
+  "I shall tell you frankly.",
+  "Hear me on this.",
+  "That question deserves a straight answer.",
+];
 
 /**
  * Historical character + autobiographical memory specification. The factual

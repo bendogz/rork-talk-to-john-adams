@@ -1,6 +1,6 @@
 import { ADAMS_SYSTEM_PROMPT, type ChatTurn } from "@/lib/adams";
 import { getSettings } from "@/lib/settings";
-import { sanitizeReply } from "@/lib/toolkit";
+import { readChatStream, sanitizeReply } from "@/lib/toolkit";
 
 const OPENAI_URL = "https://api.openai.com/v1";
 const CHAT_MODEL = "gpt-4o-mini";
@@ -103,6 +103,35 @@ export async function askAdamsWithOpenAI(
   return sanitizeReply(reply);
 }
 
+/** Streams Adams' reply on the visitor's own OpenAI key, piece by piece. */
+export async function streamAdamsWithOpenAI(
+  question: string,
+  history: ChatTurn[],
+  onDelta: (text: string) => void,
+  signal?: AbortSignal,
+): Promise<string> {
+  const { openaiKey } = getSettings();
+  const response = await fetch(`${OPENAI_URL}/chat/completions`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${openaiKey}`, "Content-Type": "application/json" },
+    signal,
+    body: JSON.stringify({
+      model: CHAT_MODEL,
+      messages: [
+        { role: "system" as const, content: ADAMS_SYSTEM_PROMPT },
+        ...history.slice(-24),
+        { role: "user" as const, content: question },
+      ],
+      temperature: 0.85,
+      max_tokens: MAX_REPLY_TOKENS,
+      stream: true,
+    }),
+  });
+
+  if (!response.ok) throw await parseError(response, signal);
+  return readChatStream(response, onDelta);
+}
+
 /** Speaks Adams' words with the visitor's OpenAI key and returns a playable object URL. */
 export async function speakAsAdamsWithOpenAI(text: string, signal?: AbortSignal): Promise<string> {
   const { openaiKey } = getSettings();
@@ -146,7 +175,6 @@ export async function transcribeWithOpenAI(audio: Blob, signal?: AbortSignal): P
   const data = (await response.json()) as { text?: string };
   const text = (data.text ?? "").trim();
 
-  if (text.length === 0) throw new OpenAIError("No words were heard. Try speaking again.", 422);
-
+  // Silence or a cough is not an error: the ear simply keeps listening.
   return text;
 }

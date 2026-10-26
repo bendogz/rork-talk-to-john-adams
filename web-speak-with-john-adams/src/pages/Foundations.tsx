@@ -19,7 +19,7 @@ function askAdamsLive(navigate: ReturnType<typeof useNavigate>, question: string
 
 /**
  * The Foundations essay: the true historical sources of the American order,
- * laid out section by section — each ending with a seal that puts that very
+ * laid out section by section, each ending with a seal that puts that very
  * question to John Adams himself, live, in the conversation.
  */
 export default function Foundations() {
@@ -124,7 +124,7 @@ export default function Foundations() {
                       strokeWidth={1.8}
                       aria-hidden="true"
                     />
-                    Put this question to Mr. Adams — live
+                    Put this question to Mr. Adams, live
                   </button>
                   <p className="font-serif-voice text-[0.9rem] italic leading-snug text-[hsl(26_30%_30%)]">
                     He answers in person, in character.
