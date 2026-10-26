@@ -1,8 +1,6 @@
-import { useState } from "react";
-import { AudioLines, Landmark, Settings } from "lucide-react";
+import { AudioLines, Landmark } from "lucide-react";
 
 import { NavLink } from "@/components/NavLink";
-import { SettingsDialog } from "@/components/SettingsDialog";
 import type { StagePhase } from "@/hooks/useAdamsConversation";
 import { APP_SUBTITLE, APP_TITLE } from "@/lib/adams";
 
@@ -12,7 +10,6 @@ interface StageHeaderProps {
 
 /** Wordmark over the scene, which yields to a speaking indicator while he holds forth. */
 export function StageHeader({ phase }: StageHeaderProps) {
-  const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
   const isSpeaking = phase === "speaking";
   const isConsidering = phase === "considering";
 
@@ -49,17 +46,6 @@ export function StageHeader({ phase }: StageHeaderProps) {
         <Landmark className="h-[18px] w-[18px]" strokeWidth={1.6} aria-hidden="true" />
         <span className="hidden font-serif-voice text-[0.9rem] sm:inline">The Foundations</span>
       </NavLink>
-
-      <button
-        type="button"
-        onClick={() => setIsSettingsOpen(true)}
-        aria-label="The private offices — settings"
-        className="absolute right-3 top-[max(0.7rem,env(safe-area-inset-top))] flex h-10 w-10 items-center justify-center rounded-full text-gold-bright/70 transition-colors hover:bg-[hsl(41_60%_50%/0.12)] hover:text-gold-bright sm:right-5"
-      >
-        <Settings className="h-[18px] w-[18px]" strokeWidth={1.6} aria-hidden="true" />
-      </button>
-
-      <SettingsDialog open={isSettingsOpen} onOpenChange={setIsSettingsOpen} />
     </header>
   );
 }
